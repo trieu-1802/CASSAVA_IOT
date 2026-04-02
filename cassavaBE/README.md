@@ -1,0 +1,5 @@
+# SMART_FARMING
+<<<<<<< HEAD
+# SMART_FARMING_IOT
+=======
+>>>>>>> 3f374a5949c68acfd4520ffdb2510e89bd14e03d
