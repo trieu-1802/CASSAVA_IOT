@@ -7,7 +7,7 @@ import java.time.LocalDateTime;
 import java.util.Date;
 
 @Document(collection = "field")
-public class Field {
+public class FieldMongo {
 
    /** @Id
     private String id;
@@ -61,35 +61,10 @@ public class Field {
     private int dAP = 1;// DEFAULT START = 1
     private boolean isIrrigating = false;
     /**
-     * No-arg constructor for MongoDB/Jackson deserialization
+     * constructor
+     *
      */
-    public Field() {}
-
-    /**
-     * Constructor with default values matching Firebase CustomizedParameters defaults.
-     * Usage: Field fieldTest = new Field("fieldTest");
-     */
-    public Field(String name) {
-        this.id = name;
-        this.acreage = 50;
-        this.fieldCapacity = 60;
-        this.distanceBetweenHole = 30;
-        this.irrigationDuration = 2;
-        this.distanceBetweenRow = 100;
-        this.dripRate = 1.6;
-        this.fertilizationLevel = 100;
-        this.scaleRain = 100;
-        this.numberOfHoles = 8;
-        this.autoIrrigation = true;
-        this.startTime = new Date();
-        this.dAP = 1;
-        this.isIrrigating = false;
-    }
-
-    /**
-     * Full constructor
-     */
-    public Field(String id, double acreage, double fieldCapacity,
+    public FieldMongo(String id, double acreage, double fieldCapacity,
                  double distanceBetweenRow, double distanceBetweenHole, double dripRate,
                  boolean autoIrrigation, int numberOfHoles, double fertilizationLevel) {
         this.id = id;

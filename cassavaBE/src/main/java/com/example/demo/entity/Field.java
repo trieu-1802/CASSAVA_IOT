@@ -1,16 +1,11 @@
 package com.example.demo.entity;
 
-import com.example.demo.data.Constant;
-import com.example.demo.service.FieldService;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
 import com.opencsv.CSVWriter;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
 import org.apache.commons.csv.CSVRecord;
-import org.eclipse.paho.client.mqttv3.MqttClient;
-import org.springframework.beans.factory.annotation.Autowired;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
@@ -18,7 +13,6 @@ import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.time.LocalDate;
 import java.util.*;
-import java.util.concurrent.ExecutionException;
 
 import static java.lang.Math.*;
 
@@ -77,15 +71,18 @@ public class Field {
     List<Double> yields;
     String checkYieldDate;
 
-    public void setCustomized_parameters(CustomizedParameters customized_parameters) {
-        this.customized_parameters = customized_parameters;
-    }
+    // Flat params (matching MongoEntity/Field)
+    public double acreage;
+    public double fieldCapacity;
+    public double distanceBetweenRow;
+    public double distanceBetweenHole;
+    public double dripRate;
+    public boolean autoIrrigation;
+    public int numberOfHoles;
+    public double fertilizationLevel;
+    public double irrigationDuration;
+    public double scaleRain;
 
-    public CustomizedParameters getCustomized_parameters() {
-        return customized_parameters;
-    }
-
-    public CustomizedParameters customized_parameters;
     MeasuredData measuredData;
     String startIrrigation;
     String endIrrigation;
@@ -101,7 +98,10 @@ public class Field {
             double amountOfIrrigation,
             List<Double> yields,
             String checkYieldDate,
-            CustomizedParameters customized_parameters,
+            double acreage, double fieldCapacity, double distanceBetweenRow,
+            double distanceBetweenHole, double dripRate, boolean autoIrrigation,
+            int numberOfHoles, double fertilizationLevel, double irrigationDuration,
+            double scaleRain,
             MeasuredData measuredData,
             String startIrrigation,
             String endIrrigation) {
@@ -112,7 +112,16 @@ public class Field {
         this.amountOfIrrigation = amountOfIrrigation;
         this.yields = yields;
         this.checkYieldDate = checkYieldDate;
-        this.customized_parameters = customized_parameters;
+        this.acreage = acreage;
+        this.fieldCapacity = fieldCapacity;
+        this.distanceBetweenRow = distanceBetweenRow;
+        this.distanceBetweenHole = distanceBetweenHole;
+        this.dripRate = dripRate;
+        this.autoIrrigation = autoIrrigation;
+        this.numberOfHoles = numberOfHoles;
+        this.fertilizationLevel = fertilizationLevel;
+        this.irrigationDuration = irrigationDuration;
+        this.scaleRain = scaleRain;
         this.measuredData = measuredData;
         this.startIrrigation = startIrrigation;
         this.endIrrigation = endIrrigation;
@@ -127,7 +136,16 @@ public class Field {
         this.yields = new ArrayList<>();
         this.yields.add(0.0);
         this.checkYieldDate = "";
-        this.customized_parameters = new CustomizedParameters(name);
+        this.acreage = 50;
+        this.fieldCapacity = 60;
+        this.distanceBetweenHole = 30;
+        this.irrigationDuration = 2;
+        this.distanceBetweenRow = 100;
+        this.dripRate = 1.6;
+        this.fertilizationLevel = 100;
+        this.scaleRain = 100;
+        this.numberOfHoles = 8;
+        this.autoIrrigation = true;
         this.measuredData = new MeasuredData(name);
         this.startIrrigation = "";
         this.endIrrigation = "";
@@ -512,7 +530,7 @@ public class Field {
 
         for (int i = 0; i < _nsl; ++i) {
             yi.set(9 + 2 * _nsl + i, iTheta.get(i));
-            yi.set(9 + 3 * _nsl + i, iNcont.get(i) * this.customized_parameters.fertilizationLevel / 100);
+            yi.set(9 + 3 * _nsl + i, iNcont.get(i) * this.fertilizationLevel / 100);
             yi.set(9 + 4 * _nsl + i, _cuttingDryMass * 30.0 / _nsl);
         }
 
@@ -789,9 +807,9 @@ public class Field {
                     history.setTime(timeStr);
                     history.setUserName("Hệ thống tự động");
                     // Tính amount (l/m2) = IrrigationRate * Duration(day) * 1000
-                    double amountVal = _IrrigationRate * (this.customized_parameters.irrigationDuration / 24.0);
+                    double amountVal = _IrrigationRate * (this.irrigationDuration / 24.0);
                     history.setAmount(amountVal);
-                    history.setDuration(this.customized_parameters.irrigationDuration * 60); // Đổi sang phút
+                    history.setDuration(this.irrigationDuration * 60); // Đổi sang phút
 
                     this.listHistory.add(history);
                     // -------------------------------
@@ -987,9 +1005,9 @@ public class Field {
         // water in soil
         //irrigation either not (rained), or from file, or auto.
         // file/auto should switch on current date?
-        double irrigation = this.customized_parameters.autoIrrigation ? wd.get(4) : 0.0;
+        double irrigation = this.autoIrrigation ? wd.get(4) : 0.0;
 
-        double precipitation = this.customized_parameters.scaleRain / 100 * wd.get(0) + irrigation;
+        double precipitation = this.scaleRain / 100 * wd.get(0) + irrigation;
         System.out.println("precipitation: " + precipitation + "\n");
         double ET0reference = wd.get(3);
         double ETrainFactor = (precipitation > 0) ? 1 : 0;
@@ -1047,7 +1065,7 @@ public class Field {
         List<Double> ncontrL = new ArrayList<>(Collections.nCopies(_nsl, 0.0));
         List<Double> _NminR_l = new ArrayList<>();
         for (int d = 0; d < _nsl; d++) {
-            double nminR = customized_parameters.fertilizationLevel / 100.0 *
+            double nminR = this.fertilizationLevel / 100.0 *
                     36.0 / (_lvol * _BD) /
                     Math.pow(d + 1, 2);
             _NminR_l.add(nminR);
@@ -1379,7 +1397,7 @@ public class Field {
             csvWriter.writeAll(data);
             csvWriter.close();
             System.out.println("Đã xuất file " + csvFilePath + " thành công!");
-            System.out.println(this.customized_parameters.toString());
+            System.out.println(this.toString());
             System.out.println(fieldName);
         } catch (IOException e) {
             e.printStackTrace();
@@ -1388,16 +1406,16 @@ public class Field {
 
     public void caculateFcthresholdAndIrrigationRate() {
         // cacular fcthresold
-        _fcthresold = this.customized_parameters.fieldCapacity;
+        _fcthresold = this.fieldCapacity;
         _fcthresold *= (_ths - _thr) / 100;
         _fcthresold += _thr;
 
         // cacular auto Irrigation Duration
-        _autoIrrigationDuration = this.customized_parameters.irrigationDuration / 24; // fix cung tuoi trong 2h/lan tuoi
+        _autoIrrigationDuration = this.irrigationDuration / 24; // fix cung tuoi trong 2h/lan tuoi
         //convert from hour to day
-        double dhr = this.customized_parameters.dripRate;// l/hour
-        double dhd = this.customized_parameters.distanceBetweenHole;//cm
-        double dld = this.customized_parameters.distanceBetweenRow;//cm
+        double dhr = this.dripRate;// l/hour
+        double dhd = this.distanceBetweenHole;//cm
+        double dld = this.distanceBetweenRow;//cm
         _IrrigationRate = dhr * 24.0 / (dhd * dld / 10000.0);//mm
 
     }

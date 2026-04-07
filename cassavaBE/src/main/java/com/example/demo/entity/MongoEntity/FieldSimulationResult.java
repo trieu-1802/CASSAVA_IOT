@@ -1,27 +1,94 @@
 package com.example.demo.entity.MongoEntity;
 
-
-import java.util.Date;
-import java.util.List;
-
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 
-@Document(collection = "field_simulation_result")
+import java.util.Date;
+
+@Document(collection = "simulation_result")
 public class FieldSimulationResult {
 
     @Id
     private String id;
 
     private String fieldId;
+    private Date time;
 
-    private Date runTime;        // thời điểm cron chạy
+    private double yield;
+    private double irrigation;
+    private double leafArea;
+    private double labileCarbon;
 
-    private Date simStartTime;
-    private Date simEndTime;
+    public FieldSimulationResult(String fieldId, Date time,
+                            double yield, double irrigation,
+                            double leafArea, double labileCarbon) {
+        this.fieldId = fieldId;
+        this.time = time;
+        this.yield = yield;
+        this.irrigation = irrigation;
+        this.leafArea = leafArea;
+        this.labileCarbon = labileCarbon;
+    }
 
-    private double expectedYield;
-    private double totalWater;
+    // getters/setters
+    // ===== GETTERS =====
 
-    private List<List<Double>> rawResults; // optional
+    public String getId() {
+        return id;
+    }
+
+    public String getFieldId() {
+        return fieldId;
+    }
+
+    public Date getTime() {
+        return time;
+    }
+
+    public double getYield() {
+        return yield;
+    }
+
+    public double getIrrigation() {
+        return irrigation;
+    }
+
+    public double getLeafArea() {
+        return leafArea;
+    }
+
+    public double getLabileCarbon() {
+        return labileCarbon;
+    }
+
+
+    // ===== SETTERS =====
+
+    public void setId(String id) {
+        this.id = id;
+    }
+
+    public void setFieldId(String fieldId) {
+        this.fieldId = fieldId;
+    }
+
+    public void setTime(Date time) {
+        this.time = time;
+    }
+
+    public void setYield(double yield) {
+        this.yield = yield;
+    }
+
+    public void setIrrigation(double irrigation) {
+        this.irrigation = irrigation;
+    }
+
+    public void setLeafArea(double leafArea) {
+        this.leafArea = leafArea;
+    }
+
+    public void setLabileCarbon(double labileCarbon) {
+        this.labileCarbon = labileCarbon;
+    }
 }
