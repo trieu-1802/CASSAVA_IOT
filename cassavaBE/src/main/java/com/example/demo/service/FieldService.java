@@ -431,7 +431,17 @@ public class FieldService {
                         int yearStart = 2023;
                         double timeYear = 365;
                         try {
-                            field.setCustomized_parameters(fieldDTOFuture.get().getCustomized_parameters());
+                            CustomizedParameters cp = fieldDTOFuture.get().getCustomized_parameters();
+                            field.acreage = cp.getAcreage();
+                            field.fieldCapacity = cp.getFieldCapacity();
+                            field.distanceBetweenRow = cp.getDistanceBetweenRow();
+                            field.distanceBetweenHole = cp.getDistanceBetweenHole();
+                            field.dripRate = cp.getDripRate();
+                            field.autoIrrigation = cp.isAutoIrrigation();
+                            field.numberOfHoles = cp.getNumberOfHoles();
+                            field.fertilizationLevel = cp.getFertilizationLevel();
+                            field.irrigationDuration = cp.getIrrigationDuration();
+                            field.scaleRain = cp.getScaleRain();
                             String start = fieldDTOFuture.get().getStartTime();
                             startTime = convertStringtoDate(start);
                             localDateStart = startTime.toInstant().atZone(java.time.ZoneId.systemDefault()).toLocalDate();
@@ -493,16 +503,16 @@ public class FieldService {
                         field.simulate();
 
                         // cập nhật lượng nc tưới lên firebase đối với những cánh đồng tưới tự động
-                        if (field.getCustomized_parameters().autoIrrigation) {
+                        if (field.autoIrrigation) {
                             int length = field._results.get(2).size();
                             double irr = (length > 1)
                                     ? field._results.get(2).get(length - 1) - field._results.get(2).get(length - 2)
                                     : field._results.get(2).get(0);
                             irr *= 0.1; // convert to l/m2
                             double duration = irr *
-                                    field.getCustomized_parameters().acreage /
-                                    (field.getCustomized_parameters().dripRate *
-                                            field.getCustomized_parameters().numberOfHoles) *
+                                    field.acreage /
+                                    (field.dripRate *
+                                            field.numberOfHoles) *
                                     3600; // convert to seconds
 
                             LocalDateTime day = getDay(field._results.get(8).get(length - 1));
@@ -568,7 +578,7 @@ public class FieldService {
 //        fieldTest._weatherData = new ArrayList<>();
 //        fieldTest._weatherData = twoDimensionalList;
         Field fieldTest = new Field("fieldTest");
-        //fieldTest.getCustomized_parameters().autoIrrigation = true;
+        //fieldTest.autoIrrigation = true;
 
         // This method will load data from CSV and set it to fieldTest._weatherData
        // fieldTest.loadAllWeatherDataFromCsvFile();
