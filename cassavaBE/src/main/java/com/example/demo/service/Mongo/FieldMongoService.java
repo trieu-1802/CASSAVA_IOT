@@ -3,6 +3,7 @@ package com.example.demo.service.Mongo;
 import com.example.demo.entity.MongoEntity.Field;
 import com.example.demo.repositories.UserRepository;
 import com.example.demo.repositories.mongo.FieldMongoRepository;
+import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -35,6 +36,36 @@ public class FieldMongoService {
         Field saved = fieldRepository.save(field);
 
         return saved;
+    }
+    public Field clone (String srcField, String newFieldId) {
+        // 1. Kiểm tra ID mới có trống không
+        if (newFieldId == null || newFieldId.trim().isEmpty()) {
+            throw new IllegalArgumentException("Tên cánh đồng mới không được để trống");
+        }
+        // 2. Tìm cánh đồng gốc
+        Field sourceField = fieldRepository.findById(srcField)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy cánh đồng gốc ID: " + srcField));
+
+        // 3. Kiểm tra xem tên mới đã tồn tại chưa
+        if (fieldRepository.existsById(newFieldId)) {
+            throw new RuntimeException("Tên cánh đồng '" + newFieldId + "' đã tồn tại trong hệ thống");
+        }
+        Field newField = new Field();
+
+        // Sử dụng BeanUtils để copy toàn bộ thông số kỹ thuật (acreage, capacity, rate,...)
+        BeanUtils.copyProperties(sourceField, newField);
+
+        // 5. Ghi đè các giá trị đặc thù cho bản clone
+        newField.setId(newFieldId);           // Đặt tên mới
+        newField.setStartTime(new Date());    // Thời gian bắt đầu là lúc bấm clone
+        newField.setIrrigating(false);      // Trạng thái tưới mặc định là false
+        newField.setDAP(1);                   // Reset DAP về 1 cho cánh đồng mới
+
+        // Lưu ý: idUser sẽ được giữ nguyên từ sourceField (vì copyProperties)
+        // Nếu bạn muốn dùng idUser mặc định cứng, hãy set lại ở đây:
+        // newField.setIdUser("69ccc364a1e7905cc9356ce3");
+
+        return fieldRepository.save(newField);
     }
 
     private void validateField(Field field) {

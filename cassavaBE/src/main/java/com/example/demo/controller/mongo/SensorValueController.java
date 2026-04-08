@@ -8,8 +8,9 @@ import org.springframework.web.bind.annotation.*;
 import java.time.LocalDateTime;
 import java.util.List;
 @CrossOrigin(origins = "http://localhost:5173")
+//@CrossOrigin(origins = "*") // Cho phép tất cả các nguồn gọi API này
 @RestController
-@RequestMapping("/api/sensor-values")
+@RequestMapping("/sensor-values")
 public class SensorValueController {
     @Autowired
     private SensorValueService sensorValueService;

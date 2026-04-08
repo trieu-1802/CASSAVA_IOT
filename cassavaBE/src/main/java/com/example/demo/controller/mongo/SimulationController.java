@@ -17,6 +17,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+@CrossOrigin(origins = "http://localhost:5173")
 @RestController
 @RequestMapping("/simulation")
 public class SimulationController {
@@ -45,19 +46,24 @@ public class SimulationController {
         List<FieldSimulationResult> data =
                 simulationResultRepository.findByFieldIdOrderByTimeAsc(fieldId);
 
-        List<String> labels = new ArrayList<>();
+        List<Double> labels = new ArrayList<>();
         List<Double> yield = new ArrayList<>();
         List<Double> irrigation = new ArrayList<>();
         List<Double> leafArea = new ArrayList<>();
+        List<String> days = new ArrayList<>();
 
         for (FieldSimulationResult r : data) {
-            labels.add(r.getTime().toString());
+            // days
+            days.add(r.getTime().toString());
+            // labels
+            labels.add(r.getLabileCarbon());
             yield.add(r.getYield());
             irrigation.add(r.getIrrigation());
             leafArea.add(r.getLeafArea());
         }
 
         Map<String, Object> result = new HashMap<>();
+        result.put("day", days);
         result.put("labels", labels);
         result.put("yield", yield);
         result.put("irrigation", irrigation);

@@ -82,10 +82,11 @@ public class SecurityConfig {
                         // Quản lý cánh đồng: Chỉ Admin mới được can thiệp
                         .requestMatchers("/api/fields/**").hasRole("ADMIN")
                         // SỬA Ở ĐÂY: Thêm cả "/mongo/field" (không gạch chéo) và "/mongo/field/**" (có gạch chéo)
-                        .requestMatchers("/simulation/**","/api/sensor-values/**","/field/**","/mongo/**","/mongo/field", "/mongo/field/**").permitAll()
+                       // .requestMatchers("mongo/irrigation-history/**","/simulation/**","/api/sensor-values/**","/field/**","/mongo/**","/mongo/field", "/mongo/field/**").permitAll()
 
                         // Các API khác yêu cầu phải đăng nhập
-                       .anyRequest().authenticated()
+                       //.anyRequest().authenticated()
+                        .anyRequest().permitAll()
 
                 );
 

@@ -4,9 +4,13 @@ import com.example.demo.entity.MongoEntity.Field;
 import com.example.demo.service.Mongo.FieldMongoService;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
+
 @CrossOrigin(origins = "http://localhost:5173")
 @RestController
 @RequestMapping("/mongo/field")
@@ -22,9 +26,6 @@ public class FieldMongoController {
     public Field create(@RequestBody Field field) {
         return fieldService.create(field);
     }
-
-
-
 
 
     // ========================
@@ -67,8 +68,18 @@ public class FieldMongoController {
         fieldService.delete(id);
         return "Deleted successfully";
     }
-    @PostMapping("/cloneField")
-    public String clone() {
-        return "clone sucessfully";
+    @PostMapping("/clone/{id}")
+    public ResponseEntity<?> clone(@PathVariable String id, @RequestBody Map<String, String> body) {
+        try {
+            String newId = body.get("newId");
+            Field clonedField = fieldService.clone(id, newId);
+            return ResponseEntity.status(HttpStatus.CREATED).body(clonedField);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(e.getMessage());
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Lỗi hệ thống");
+        }
     }
 }

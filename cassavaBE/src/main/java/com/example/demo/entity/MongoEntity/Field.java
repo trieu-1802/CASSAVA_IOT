@@ -1,11 +1,16 @@
 package com.example.demo.entity.MongoEntity;
 
+import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.LocalDateTime;
 import java.util.Date;
-
+@Data
+@Getter
+@Setter
 @Document(collection = "field")
 public class Field {
 
@@ -55,8 +60,8 @@ public class Field {
 
     // Các biến bạn muốn để mặc định (không truyền từ JSON)
     private String idUser = "69ccc364a1e7905cc9356ce3"; // Default ID
-    private int irrigationDuration = 30;
-    private double scaleRain = 0.7;
+    private int irrigationDuration = 2;
+    private double scaleRain = 100;
     private Date startTime = new Date();
     private int dAP = 1;// DEFAULT START = 1
     private boolean isIrrigating = false;
