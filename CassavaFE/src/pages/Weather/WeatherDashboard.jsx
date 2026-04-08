@@ -95,6 +95,7 @@
 
 export default WeatherDashboard;
 */}
+/** 
 import React from 'react';
 import { Card, List, Typography, Button, Tag, Space } from 'antd';
 import { 
@@ -106,13 +107,14 @@ import {
   LineChartOutlined,
   RightOutlined
 } from '@ant-design/icons';
+import fieldService from '../../services/fieldService';
 import { useNavigate } from 'react-router-dom';
 
 const { Title, Text } = Typography;
 
 const WeatherDashboard = () => {
   const navigate = useNavigate();
-
+  
   // Dữ liệu giả lập cho 5 loại cảm biến
   const sensors = [
     { id: 'temperature', name: 'Nhiệt độ môi trường', value: 32.5, unit: '°C', icon: <FireOutlined style={{ color: '#cf1322' }} />, color: 'red' },
@@ -121,7 +123,7 @@ const WeatherDashboard = () => {
     { id: 'radiation', name: 'Bức xạ mặt trời', value: 850, unit: 'W/m²', icon: <ThunderboltOutlined style={{ color: '#d48806' }} />, color: 'warning' },
     { id: 'wind_speed', name: 'Tốc độ gió', value: 3.5, unit: 'm/s', icon: <CompassOutlined style={{ color: '#531dab' }} />, color: 'purple' },
   ];
-
+  
   return (
     <div style={{ padding: '24px' }}>
       <Card 
@@ -172,6 +174,145 @@ const WeatherDashboard = () => {
           )}
         />
       </Card>
+    </div>
+  );
+};
+
+export default WeatherDashboard;
+*/
+import React, { useEffect, useState } from 'react';
+import { Card, List, Typography, Button, Tag, Space, Spin, message } from 'antd';
+import { 
+  CloudOutlined, 
+  FireOutlined, 
+  ThunderboltOutlined,
+  CompassOutlined,
+  DashboardOutlined,
+  LineChartOutlined,
+  RightOutlined,
+  LoadingOutlined
+} from '@ant-design/icons';
+import { useNavigate, useParams } from 'react-router-dom';
+import fieldService from '../../services/fieldService';
+
+const { Title, Text } = Typography;
+
+const WeatherDashboard = () => {
+  const navigate = useNavigate();
+  const { fieldId } = useParams(); // Lấy ID cánh đồng từ URL
+  const [sensors, setSensors] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  // Hàm bổ trợ để map sensorId từ BE sang giao diện (Icon, Tên, Đơn vị)
+  const getSensorConfig = (sensorId) => {
+    const configs = {
+      temperature: { name: 'Nhiệt độ môi trường', unit: '°C', icon: <FireOutlined style={{ color: '#cf1322' }} /> },
+      humidity: { name: 'Độ ẩm không khí', unit: '%', icon: <CloudOutlined style={{ color: '#096dd9' }} /> },
+      rainfall: { name: 'Lượng mưa tích lũy', unit: 'mm', icon: <DashboardOutlined style={{ color: '#3f6600' }} /> },
+      radiation: { name: 'Bức xạ mặt trời', unit: 'W/m²', icon: <ThunderboltOutlined style={{ color: '#d48806' }} /> },
+      wind_speed: { name: 'Tốc độ gió', unit: 'm/s', icon: <CompassOutlined style={{ color: '#531dab' }} /> },
+    };
+    // Trả về config tương ứng hoặc giá trị mặc định nếu không khớp
+    return configs[sensorId] || { name: sensorId, unit: '', icon: <DashboardOutlined /> };
+  };
+
+  useEffect(() => {
+    const fetchSensors = async () => {
+      setLoading(true);
+      try {
+        // Gọi API lấy sensor theo fieldId
+        // Lưu ý: Cậu kiểm tra lại chính xác endpoint BE của cậu nhé
+        const response = await fieldService.get(`/field/${fieldId}/sensor`);
+        setSensors(response.data);
+      } catch (error) {
+        console.error("Lỗi tải sensor:", error);
+        message.error("Không thể lấy danh sách cảm biến của cánh đồng này!");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (fieldId) {
+      fetchSensors();
+    }
+  }, [fieldId]);
+
+  if (loading) {
+    return (
+      <div style={{ textAlign: 'center', padding: '100px' }}>
+        <Spin indicator={<LoadingOutlined style={{ fontSize: 48 }} spin />} />
+        <div style={{ marginTop: 16 }}>Đang tải danh sách cảm biến...</div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ padding: '24px' }}>
+      <Card 
+        title={
+          <Space>
+            <Title level={3} style={{ margin: 0 }}>Trạm quan trắc: {fieldId}</Title>
+            <Tag color="blue">Cánh đồng {fieldId}</Tag>
+          </Space>
+        }
+        extra={<Tag color="green">Đang kết nối</Tag>}
+      >
+        <List
+          itemLayout="horizontal"
+          dataSource={sensors}
+          locale={{ emptyText: 'Cánh đồng này hiện chưa được lắp đặt cảm biến.' }}
+          renderItem={(item) => {
+            const config = getSensorConfig(item.sensorId);
+            return (
+              <List.Item
+                style={{ padding: '20px 0' }}
+                actions={[
+                  <Button 
+                    type="primary" 
+                    ghost 
+                    icon={<LineChartOutlined />} 
+                    onClick={() => navigate(`/weather/detail/${item.sensorId}`)}
+                  >
+                    Xem đồ thị <RightOutlined />
+                  </Button>
+                ]}
+              >
+                <List.Item.Meta
+                  avatar={
+                    <div style={{ 
+                      fontSize: '24px', 
+                      background: '#f5f5f5', 
+                      padding: '12px', 
+                      borderRadius: '8px',
+                      display: 'flex',
+                      alignItems: 'center'
+                    }}>
+                      {config.icon}
+                    </div>
+                  }
+                  title={<Text strong style={{ fontSize: '16px' }}>{config.name}</Text>}
+                  description={
+                    <Space direction="vertical">
+                      <Text type="secondary">ID thiết bị: {item.id}</Text>
+                      <Title level={4} style={{ margin: 0 }}>
+                        {/* Hiển thị giá trị thực tế nếu BE có trả về, không thì để placeholder */}
+                        {item.lastValue || '--'} <small>{config.unit}</small>
+                      </Title>
+                    </Space>
+                  }
+                />
+              </List.Item>
+            );
+          }}
+        />
+      </Card>
+      
+      <Button 
+        style={{ marginTop: 16 }} 
+        onClick={() => navigate('/fields')}
+      >
+        Quay lại danh sách cánh đồng
+      </Button>
     </div>
   );
 };

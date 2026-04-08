@@ -9,7 +9,7 @@ import IrrigationTab from './IrrigationTab';
 import YieldTab from './YieldTab';
 import HistoryTab from './HistoryTab';
 import DiseaseTab from './DiseaseTab';
-
+import SimulationDashboard from '../components/SimulationDashboard';
 const { Title } = Typography;
 
 const FieldDetailIndex = () => {
@@ -19,8 +19,8 @@ const FieldDetailIndex = () => {
   // Nhúng các component con vào cấu trúc Tabs
   const tabItems = [
     { key: '1', label: 'Theo dõi tưới tiêu', children: <IrrigationTab /> },
-    { key: '2', label: 'Dự đoán sản lượng', children: <YieldTab /> },
-    { key: '3', label: 'Lịch sử tưới', children: <HistoryTab /> },
+    { key: '2', label: 'Dự đoán sản lượng', children: <SimulationDashboard fieldId={id} /> },
+    { key: '3', label: 'Lịch sử tưới', children: <HistoryTab fieldId={id} />},
     { key: '4', label: 'Tình trạng bệnh', children: <DiseaseTab /> },
   ];
 

@@ -11,7 +11,7 @@ const Register = () => {
   const onFinish = async (values) => {
   try {
     // Gọi API: POST http://localhost:8000/v1/auth/register
-    await api.post('/auth/register', {
+    await api.post('api/auth/register', {
       username: values.username,
       email: values.email, // Cần thêm trường này vào Form Ant Design
       password: values.password

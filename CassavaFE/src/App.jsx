@@ -30,7 +30,7 @@ function App() {
         <Route element={<MainLayout />}>
           
           {/* Điều hướng mặc định: Vào localhost:3000/ -> đẩy sang /fields */}
-          <Route path="/" element={<Navigate to="/fields" replace />} />
+          <Route path="/" element={<Navigate to="/login" replace />} />
           
           {/* Trang hiển thị danh sách cánh đồng (Có bảng, nút thêm/sửa/xóa) */}
           <Route path="/fields" element={<FieldList />} />
@@ -40,7 +40,7 @@ function App() {
 
           {/* TODO: Đường dẫn cho trang Thời Tiết (Chúng ta sẽ làm tiếp sau) */}
           {/* <Route path="/weather" element={<WeatherDashboard />} /> */}
-          <Route path="/weather" element={<WeatherDashboard />} />
+          <Route path="/weather/:fieldId" element={<WeatherDashboard />} />
           <Route path="weather/detail/:sensorId" element={<WeatherDetail />} />
           {/*đường dẫn đến trang danh sách user*/}
           <Route path="/users" element={<UserList />} />

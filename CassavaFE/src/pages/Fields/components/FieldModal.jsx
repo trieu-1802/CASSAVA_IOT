@@ -1,3 +1,4 @@
+/** 
 // src/pages/Fields/components/FieldModal.jsx
 import React, { useEffect } from 'react';
 import { Modal, Form, Input, InputNumber } from 'antd';
@@ -50,7 +51,8 @@ const FieldModal = ({ open, onCancel, onSubmit, initialData }) => {
           <InputNumber style={{ width: '100%' }} min={0} step={0.1} />
         </Form.Item>
 
-        {/* Các tham số theo yêu cầu của hệ thống IoT */}
+        {/* Các tham số theo yêu cầu của hệ thống IoT */
+        /** 
         <div style={{ display: 'flex', gap: '16px' }}>
           <Form.Item name="totalHoles" label="Tổng số lỗ tưới" style={{ flex: 1 }}>
             <InputNumber style={{ width: '100%' }} min={0} />
@@ -70,6 +72,117 @@ const FieldModal = ({ open, onCancel, onSubmit, initialData }) => {
             <InputNumber style={{ width: '100%' }} min={0} max={100} />
           </Form.Item>
         </div>
+      </Form>
+    </Modal>
+  );
+};
+
+export default FieldModal;
+*/
+// src/pages/Fields/components/FieldModal.jsx
+import React, { useEffect } from 'react';
+import { Modal, Form, Input, InputNumber, Switch, Row, Col, Divider } from 'antd';
+
+const FieldModal = ({ open, onCancel, onSubmit, initialData }) => {
+  const [form] = Form.useForm();
+
+  useEffect(() => {
+    if (open) {
+      if (initialData) {
+        form.setFieldsValue(initialData);
+      } else {
+        form.resetFields();
+      }
+    }
+  }, [open, initialData, form]);
+
+  const handleOk = () => {
+    form.validateFields().then((values) => {
+      onSubmit(values);
+      form.resetFields();
+    });
+  };
+
+  return (
+    <Modal
+      title={initialData ? "Chỉnh sửa tham số cánh đồng" : "Thêm cánh đồng mới"}
+      open={open}
+      onOk={handleOk}
+      onCancel={onCancel}
+      okText="Lưu lại"
+      cancelText="Hủy"
+      width={700}
+    >
+      <Form form={form} layout="vertical" name="field_form">
+        <Row gutter={16}>
+          <Col span={12}>
+            <Form.Item
+              name="id"
+              label="Mã cánh đồng (ID)"
+              rules={[{ required: true, message: 'Vui lòng nhập ID!' }]}
+            >
+              <Input placeholder="Ví dụ: Field_A1" disabled={!!initialData} />
+            </Form.Item>
+          </Col>
+          <Col span={12}>
+            <Form.Item
+              name="acreage"
+              label="Diện tích (m²)"
+              rules={[{ required: true, message: 'Vui lòng nhập diện tích!' }]}
+            >
+              <InputNumber style={{ width: '100%' }} min={0} step={0.1} />
+            </Form.Item>
+          </Col>
+        </Row>
+
+        <Divider orientation="left" plain style={{ fontSize: '12px', color: '#999' }}>Thông số canh tác</Divider>
+
+        <Row gutter={16}>
+          <Col span={8}>
+            <Form.Item name="fieldCapacity" label="Field Capacity">
+              <InputNumber style={{ width: '100%' }} min={0} max={1} step={0.01} placeholder="0.8" />
+            </Form.Item>
+          </Col>
+          <Col span={8}>
+            <Form.Item name="distanceBetweenRow" label="Khoảng cách hàng (m)">
+              <InputNumber style={{ width: '100%' }} min={0} step={0.1} />
+            </Form.Item>
+          </Col>
+          <Col span={8}>
+            <Form.Item name="distanceBetweenHole" label="Khoảng cách lỗ (m)">
+              <InputNumber style={{ width: '100%' }} min={0} step={0.1} />
+            </Form.Item>
+          </Col>
+        </Row>
+
+        <Row gutter={16}>
+          <Col span={8}>
+            <Form.Item name="numberOfHoles" label="Tổng số lỗ tưới">
+              <InputNumber style={{ width: '100%' }} min={0} precision={0} />
+            </Form.Item>
+          </Col>
+          <Col span={8}>
+            <Form.Item name="dripRate" label="Tốc độ nhỏ giọt (L/h)">
+              <InputNumber style={{ width: '100%' }} min={0} step={0.5} />
+            </Form.Item>
+          </Col>
+          <Col span={8}>
+            <Form.Item name="fertilizationLevel" label="Mức độ phân bón">
+              <InputNumber style={{ width: '100%' }} min={0} step={0.1} />
+            </Form.Item>
+          </Col>
+        </Row>
+
+        <Divider />
+
+        <Form.Item 
+          name="autoIrrigation" 
+          label="Tự động tưới tiêu" 
+          valuePropName="checked"
+          initialValue={false}
+        >
+          <Switch checkedChildren="Bật" unCheckedChildren="Tắt" />
+        </Form.Item>
       </Form>
     </Modal>
   );

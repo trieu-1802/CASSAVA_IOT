@@ -16,14 +16,14 @@ const { Title } = Typography;
 const MainLayout = () => {
   const [collapsed, setCollapsed] = useState(false);
 // 1. Lấy thông tin user từ localStorage để kiểm tra quyền
-  //const userData = JSON.parse(localStorage.getItem("user"));
-  //const isAdmin = userData?.admin == true; //// Kiểm tra trường admin trong Token/User
+  const userData = JSON.parse(localStorage.getItem("user"));
+  const isAdmin = userData?.isAdmin == true; //// Kiểm tra trường admin trong Token/User
   //const isAdmin = true;
 
 // 1. Giả lập dữ liệu User để test (Nếu chưa có trong localStorage)
   // Cậu có thể mở F12 -> Application -> Local Storage để xem/thêm dữ liệu này
-  const userData = JSON.parse(localStorage.getItem("user")) || { username: "Kiên Admin", admin: true };
-  const isAdmin = userData?.admin === true;  
+ // const userData = JSON.parse(localStorage.getItem("user")) || { username: "Kiên Admin", admin: true };
+ // const isAdmin = userData?.admin === true;  
   const navigate = useNavigate();
   const location = useLocation();
   // thêm mới

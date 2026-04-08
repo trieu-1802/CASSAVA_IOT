@@ -9,10 +9,10 @@ const Login = () => {
   const navigate = useNavigate();
 
   // Hàm này chỉ chạy khi người dùng nhập HỢP LỆ tất cả các trường
-  /*const onFinish = async (values) => {
+  const onFinish = async (values) => {
   try {
     // Gọi API: POST http://localhost:8000/v1/auth/login
-    const res = await api.post('/auth/login', {
+    const res = await api.post('api/auth/login', {
       username: values.username,
       password: values.password
     });
@@ -26,10 +26,10 @@ const Login = () => {
     // BE trả về lỗi 404 nếu sai username/password
     message.error('Sai tài khoản hoặc mật khẩu!');
   }
-};*/
-const onFinish = async (values) => {
-//  try {
-  /*  const res = await api.post('/auth/login', {
+};
+/**const onFinish = async (values) => {
+  try {
+   const res = await api.post('/auth/login', {
       username: values.username,
       password: values.password
     });
@@ -37,7 +37,7 @@ const onFinish = async (values) => {
     // BE trả về Object, Axios sẽ đưa vào res.data
     const data = res.data;
 
- /*   if (data.success) {
+    if (data.success) {
       // 1. Lưu thông tin vào localStorage để api.js (interceptor) lấy ra dùng
       localStorage.setItem('user', JSON.stringify(data));
       
@@ -47,13 +47,13 @@ const onFinish = async (values) => {
     } else {
       // Trường hợp BE trả về 200 OK nhưng success: false (nếu có logic này)
       message.error(data.message || 'Đăng nhập thất bại!');
-    } */
+    } 
    navigate('/fields');
- // } catch (error) {
-  //  console.error("Login Error:", error);
-  //  message.error('Tài khoản hoặc mật khẩu không chính xác!');
- // }
-};
+  } catch (error) {
+    console.error("Login Error:", error);
+    message.error('Tài khoản hoặc mật khẩu không chính xác!');
+  }
+}; */
   return (
     <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: '#f0f2f5' }}>
       <Card style={{ width: 400, boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>

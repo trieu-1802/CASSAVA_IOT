@@ -1,282 +1,218 @@
-// src/pages/Fields/FieldList.jsx
-import React, { useState } from 'react';
-import { Table, Button, Space, Typography, Popconfirm, message, Card } from 'antd';
+
+import React, { useState, useEffect } from 'react';
+import { Table, Button, Space, Typography, Popconfirm, message, Card, Tag, Modal, Input } from 'antd';
 import { 
   PlusOutlined, 
-  DownloadOutlined, 
   EditOutlined, 
   DeleteOutlined, 
   EyeOutlined,
-  CopyOutlined 
+  CopyOutlined,
+  ReloadOutlined,
+  CloudOutlined
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 
-// 1. Import Component Popup Thêm/Sửa tham số cánh đồng
+// 1. Import file cấu hình Axios của cậu (Nhớ trỏ đúng đường dẫn)
+import fieldService from '../../services/fieldService'; 
+//import { fieldService } from '../../services/fieldService';
 import FieldModal from './components/FieldModal';
 
 const { Title } = Typography;
-// 1. Lấy thông tin user từ localStorage để kiểm tra quyền
-  const userData = JSON.parse(localStorage.getItem('user'));
- // const isAdmin = userData?.admin === true; // Kiểm tra trường admin trong Token/User
-const isAdmin = false;
+
 const FieldList = () => {
+  const userData = JSON.parse(localStorage.getItem('user'));
+  const isAdmin = userData?.isAdmin === true;
   const navigate = useNavigate();
 
   // --- CÁC STATE QUẢN LÝ DỮ LIỆU VÀ GIAO DIỆN ---
-  
-  // State quản lý việc ẩn/hiện popup Modal
   const [isModalOpen, setIsModalOpen] = useState(false);
-  
-  // State lưu trữ dữ liệu của cánh đồng đang được chọn để sửa (nếu có)
   const [editingField, setEditingField] = useState(null);
+  
+  // State mới: Dùng để lưu danh sách từ API
+  const [fields, setFields] = useState([]);
+  
+  // State mới: Hiển thị vòng xoay loading trong lúc đợi API trả dữ liệu
+  const [loading, setLoading] = useState(false); 
+  
+  // state clone
+  const [cloneModalVisible, setCloneModalVisible] = useState(false);
+  const [sourceFieldId, setSourceFieldId] = useState('');
+  const [newFieldId, setNewFieldId] = useState('');
 
-  // Dữ liệu danh sách cánh đồng (Sau này sẽ gọi API từ BE trả về)
-  // Mình thêm sẵn các tham số tưới tiêu để khi bấm "Sửa", nó hiện sẵn lên form
-  const [fields, setFields] = useState([
-    {
-      id: '1',
-      name: 'Cánh đồng sắn khu A',
-      area: 1.5,
-      plantingDate: '2025-12-01',
-      //status: 'Phát triển tốt',
-      model: 'tưới tay',
-      totalHoles: 1000,
-      dripRate: 2.5,
-      holeSpacing: 30,
-      targetHumidity: 65,
-    },
-    {
-      id: '2',
-      name: 'Cánh đồng sắn khu B',
-      area: 2.0,
-      plantingDate: '2026-01-15',
-     // status: 'Cần tưới nước',
-      model: 'tưới tự động',
-      totalHoles: 1500,
-      dripRate: 3.0,
-      holeSpacing: 40,
-      targetHumidity: 70,
-    },
-        {
-      id: '3',
-      name: 'Cánh đồng sắn khu B',
-      area: 2.0,
-      plantingDate: '2026-01-15',
-     // status: 'Cần tưới nước',
-      model: 'tưới tự động',
-      totalHoles: 1500,
-      dripRate: 3.0,
-      holeSpacing: 40,
-      targetHumidity: 70,
-    },
-        {
-      id: '4',
-      name: 'Cánh đồng sắn khu B',
-      area: 2.0,
-      plantingDate: '2026-01-15',
-      //status: 'Cần tưới nước',
-      model: 'tưới tự động',
-      totalHoles: 1500,
-      dripRate: 3.0,
-      holeSpacing: 40,
-      targetHumidity: 70,
-    },
-        {
-      id: '5',
-      name: 'Cánh đồng sắn khu B',
-      area: 2.0,
-      plantingDate: '2026-01-15',
-      //status: 'Cần tưới nước',
-      model: 'tưới tự động',
-      totalHoles: 1500,
-      dripRate: 3.0,
-      holeSpacing: 40,
-      targetHumidity: 70,
-    },
-        {
-      id: '6',
-      name: 'Cánh đồng sắn khu B',
-      area: 2.0,
-      plantingDate: '2026-01-15',
-      //status: 'Cần tưới nước',
-      model: 'tưới tự động',
-      totalHoles: 1500,
-      dripRate: 3.0,
-      holeSpacing: 40,
-      targetHumidity: 70,
-    },
-        {
-      id: '7',
-      name: 'Cánh đồng sắn khu B',
-      area: 2.0,
-      plantingDate: '2026-01-15',
-      //status: 'Cần tưới nước',
-      model: 'tưới tự động',
-      totalHoles: 1500,
-      dripRate: 3.0,
-      holeSpacing: 40,
-      targetHumidity: 70,
-    },
-        {
-      id: '8',
-      name: 'Cánh đồng sắn khu B',
-      area: 2.0,
-      plantingDate: '2026-01-15',
-     // status: 'Cần tưới nước',
-      model: 'tưới tự động',
-      totalHoles: 1500,
-      dripRate: 3.0,
-      holeSpacing: 40,
-      targetHumidity: 70,
-    },
-        {
-      id: '9',
-      name: 'Cánh đồng sắn khu B',
-      area: 2.0,
-      plantingDate: '2026-01-15',
-      //status: 'Cần tưới nước',
-      model: 'tưới tự động',
-      totalHoles: 1500,
-      dripRate: 3.0,
-      holeSpacing: 40,
-      targetHumidity: 70,
-    },
-        {
-      id: '10',
-      name: 'Cánh đồng sắn khu B',
-      area: 2.0,
-      plantingDate: '2026-01-15',
-      //status: 'Cần tưới nước',
-      model: 'tưới tự động',
-      totalHoles: 1500,
-      dripRate: 3.0,
-      holeSpacing: 40,
-      targetHumidity: 70,
-    },
-        {
-      id: '11',
-      name: 'Cánh đồng sắn khu B',
-      area: 2.0,
-      plantingDate: '2026-01-15',
-     // status: 'Cần tưới nước',
-      model: 'tưới tự động',
-      totalHoles: 1500,
-      dripRate: 3.0,
-      holeSpacing: 40,
-      targetHumidity: 70,
-    },
-  ]);
+  // --- GỌI API LẤY DỮ LIỆU (USE EFFECT) ---
+  const fetchFields = async () => {
+    setLoading(true);
+    try {
+      const response = await fieldService.get('/field');
+      // Giả sử API trả về 1 mảng các object. Nếu BE trả về 1 object đơn thì dùng: setFields([response.data]);
+      setFields(response.data); 
+    } catch (error) {
+      console.error("Lỗi khi tải danh sách cánh đồng:", error);
+      message.error("Không thể tải dữ liệu từ máy chủ!");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Tự động chạy hàm fetchFields khi vào trang
+  useEffect(() => {
+    fetchFields();
+  }, []);
 
   // --- CÁC HÀM XỬ LÝ SỰ KIỆN NÚT BẤM ---
-
-  // Chuyển hướng sang trang chi tiết (3 Tab)
   const handleViewDetail = (id) => {
     navigate(`/fields/${id}`);
   };
 
-  // Mở popup để THÊM MỚI
   const handleAddNew = () => {
-    setEditingField(null); // Đảm bảo form trống rỗng
-    setIsModalOpen(true);  // Bật popup
+    setEditingField(null); 
+    setIsModalOpen(true);  
   };
 
-  // Mở popup để SỬA THAM SỐ
   const handleEditParams = (record) => {
-    setEditingField(record); // Nạp dữ liệu của dòng hiện tại vào form
-    setIsModalOpen(true);    // Bật popup
+    setEditingField(record); 
+    setIsModalOpen(true);    
   };
 
-  // Xử lý khi người dùng bấm "Lưu lại" ở trong Popup
-  const handleModalSubmit = (values) => {
-    if (editingField) {
-      // Logic cập nhật nếu đang ở chế độ Sửa
-      const updatedFields = fields.map(field => 
-        field.id === editingField.id ? { ...field, ...values } : field
-      );
-      setFields(updatedFields);
-      message.success(`Đã cập nhật thông số cho: ${values.name}`);
-    } else {
-      // Logic thêm mới vào danh sách
-      const newField = {
-        ...values,
-        id: Date.now().toString(), // Tạo một ID tạm thời
-        plantingDate: new Date().toISOString().split('T')[0], // Gán ngày hôm nay
-        status: 'Mới tạo',
-      };
-      setFields([...fields, newField]);
-      message.success(`Đã thêm mới cánh đồng: ${values.name}`);
+  const handleModalSubmit = async (values) => {
+    // TODO: Chỗ này cậu sẽ thay bằng authService.post() hoặc authService.put() để lưu vào DB thực tế
+     setLoading(true); // Hiển thị loading khi đang đợi Server xử lý
+     try {
+      if(editingField) {
+        // TRƯỜNG HỢP: SỬA (UPDATE)
+        // Giả sử API sửa của bạn là PUT /updateField hoặc tương tự
+        const fieldId = editingField.id;
+        await fieldService.put(`/field/updateField/${fieldId}`, values);
+        message.success("Cập nhật thông số cánh đồng thành công!");
+      } else {
+        // TRƯỜNG HỢP: THÊM MỚI (CREATE)
+        // Gọi đến API @PostMapping("createField") ở Backend Java
+        await fieldService.post('/field/createField', values);
+        message.success("Thêm cánh đồng mới thành công!");
+      }
+      setIsModalOpen(false); // Đóng Modal
+      fetchFields();         // Load lại danh sách mới từ Server
+     } catch(error) {
+      console.error("Lỗi khi lưu dữ liệu:", error);
+      message.error("Không thể lưu dữ liệu. Vui lòng kiểm tra lại!");
+     } finally {
+      setLoading(false);
     }
-    setIsModalOpen(false); // Lưu xong thì đóng popup
+  /**   message.success("Chức năng lưu xuống DB đang được phát triển!");
+    setIsModalOpen(false);
+    fetchFields(); // Load lại bảng sau khi lưu
+    */
+  };
+ /**   const handleRefresh = async (id) => {
+    setLoading(true);
+    try {
+      // Gọi API refresh
+      await fieldService.put(`/field/${id}/refresh`);
+      message.success(`Cánh đồng ${id} đã được làm mới cho vụ vụ mới!`);
+      fetchFields(); // Tải lại danh sách
+    } catch (error) {
+      console.error("Lỗi khi làm mới cánh đồng:", error);
+      message.error("Không thể làm mới cánh đồng!");
+    } finally {
+      setLoading(false);
+    }
+  };
+  */
+  const handleDelete = async (id) => {
+    if (isAdmin) {
+      try {
+        // TODO: Mở comment dòng dưới khi BE đã có API xóa
+         await fieldService.delete(`/field/${id}`);
+        
+        // Tạm thời xóa trên giao diện để test
+        const newData = fields.filter(item => item.id !== id);
+        setFields(newData);
+        message.success('Đã xóa cánh đồng thành công!');
+      } catch (error) {
+        message.error('Lỗi khi xóa cánh đồng!');
+      }
+    } else {
+      message.error('Lỗi: Bạn không có quyền thực hiện hành động này!');
+    }
   };
 
-  // Xóa cánh đồng
-  //const handleDelete = (id) => {
-   // const newData = fields.filter(item => item.id !== id);
-  //  setFields(newData);
-//    message.success('Đã xóa cánh đồng thành công!');
- // };
-const handleDelete = (id) => {
-  
+  const handleClone = (record) => {
+    // TODO: Gửi request POST lên BE với dữ liệu copy từ record
+    message.info("Tính năng clone xuống DB đang được phát triển");
+    setSourceFieldId(record.id);
+    setNewFieldId(`${record.id}_copy`);
+    setCloneModalVisible(true);  // Mở popup
+  };
+  const confirmClone = async () => {
+    if (!newFieldId.trim()) {
+      return message.error("Vui lòng nhập tên cánh đồng mới!");
+    }
 
-  if (isAdmin) {
-    // KỊCH BẢN CHO ADMIN: Xóa "mềm" trên giao diện
-    const newData = fields.filter(item => (item._id !== id && item.id !== id));
-    setFields(newData);
-    message.success('Đã xóa cánh đồng thành công! (Chế độ Admin)');
-  } else {
-    // KỊCH BẢN CHO USER THƯỜNG: Báo lỗi
-    message.error('Lỗi: Bạn không có quyền thực hiện hành động này!');
-  }
-};
-// Hàm sao chép cánh đồng
-const handleClone = (record) => {
-  // Tạo một bản sao mới từ record hiện tại
-  const clonedField = {
-    ...record,
-    id: Date.now().toString(), // Tạo ID mới duy nhất bằng timestamp
-    name: `${record.name} (Bản sao)`, // Thêm chữ (Bản sao) để dễ phân biệt
-    status: 'Mới tạo', // Reset trạng thái nếu cần
-    plantingDate: new Date().toISOString().split('T')[0], // Gán ngày hiện tại
+    setLoading(true);
+    try {
+      // Gọi API clone: POST /api/fields/{sourceId}/clone
+      // Body gửi lên là { newId: "tên mới" }
+      await fieldService.post(`/field/clone/${sourceFieldId}`, { 
+        newId: newFieldId 
+      });
+
+      message.success(`Nhân bản cánh đồng "${sourceFieldId}" thành "${newFieldId}" thành công!`);
+      setCloneModalVisible(false);
+      fetchFields(); // Tải lại danh sách để thấy cánh đồng mới
+    } catch (error) {
+      console.error("Clone error:", error);
+      // Hiển thị lỗi từ BE (ví dụ: tên đã tồn tại)
+      message.error(error.response?.data || "Lỗi khi nhân bản cánh đồng!");
+    } finally {
+      setLoading(false);
+    }
   };
 
-  // Cập nhật vào danh sách state
-  setFields([...fields, clonedField]);
-  message.success(`Đã sao chép thành công cánh đồng: ${record.name}`);
-};
-
-  // Tải file thời tiết
-  const handleDownloadWeather = () => {
-    // TODO: Tích hợp thư viện xlsx để xuất file thật
-    message.success('Đang tải xuống file dataWeather.xlsx...');
-  };
-
-  // --- CẤU HÌNH CÁC CỘT CHO BẢNG ---
+  // --- CẤU HÌNH CÁC CỘT CHO BẢNG MỚI KHỚP VỚI JSON TỪ BACKEND ---
   const columns = [
     {
-      title: 'Tên cánh đồng',
-      dataIndex: 'name',
-      key: 'name',
+      title: 'Tên Cánh Đồng', // Tạm dùng ID vì BE chưa có Name
+      dataIndex: 'id',
+      key: 'id',
       render: (text) => <strong>{text}</strong>,
     },
-    {
-      title: 'Diện tích (ha)',
-      dataIndex: 'area',
-      key: 'area',
-    },
+  /**   {
+      title: 'Diện tích (m²)',
+      dataIndex: 'acreage', // Đổi từ area -> acreage
+      key: 'acreage',
+    }, */
     {
       title: 'Ngày bắt đầu trồng',
-      dataIndex: 'plantingDate',
-      key: 'plantingDate',
+      dataIndex: 'startTime', // Đổi từ plantingDate -> startTime
+      key: 'startTime',
+      render: (text) => {
+        // Format ngày giờ từ "2026-04-02T09:56:28.104+00:00" cho dễ đọc
+        if (!text) return '';
+        const date = new Date(text);
+        return date.toLocaleDateString('vi-VN');
+      }
     },
-    //{
-     // title: 'Trạng thái',
-     // dataIndex: 'status',
-     // key: 'status',
-    //},
+    {
+      title: 'Ngày tuổi (DAP)',
+      dataIndex: 'dap', // Hiển thị thêm số ngày sau khi trồng
+      key: 'dap',
+      render: (text) => `${text} ngày`,
+    },
     {
       title: 'Chế độ tưới',
-      dataIndex: 'model',
-      key: 'model',
+      dataIndex: 'autoIrrigation', // Đổi từ model -> autoIrrigation
+      key: 'autoIrrigation',
+      render: (isAuto) => (
+        isAuto ? <Tag color="green">Tự động</Tag> : <Tag color="default">Thủ công</Tag>
+      ),
+    },
+    {
+      title: 'Trạng thái bơm',
+      dataIndex: 'irrigating', // Biến boolean báo xem có đang bơm không
+      key: 'irrigating',
+      render: (isIrrigating) => (
+        isIrrigating ? <Tag color="blue" className="animate-pulse">Đang bơm</Tag> : <Tag>Tắt</Tag>
+      ),
     },
     {
       title: 'Hành động',
@@ -284,39 +220,59 @@ const handleClone = (record) => {
       align: 'center',
       render: (_, record) => (
         <Space size="middle">
-          <Button 
-            type="primary" 
-            icon={<EyeOutlined />} 
-            onClick={() => handleViewDetail(record.id)}
-          >
+          <Button type="primary" icon={<EyeOutlined />} onClick={() => handleViewDetail(record.id)}>
             Chi tiết
           </Button>
-          <Button 
-            icon={<EditOutlined />} 
-            onClick={() => handleEditParams(record)}
+           <Button 
+          type="primary" 
+          icon={<CloudOutlined />} // Cậu import icon này từ antd-icons nhé
+          onClick={() => navigate(`/weather/${record.id}`)}
           >
-            Sửa tham số
-          </Button>
-          {/* Nút Clone mới thêm vào */}
-        <Button 
-          icon={<CopyOutlined />} 
-          onClick={() => handleClone(record)}
-          title="Sao chép cánh đồng"
-        >
-          Clone
+        Xem cảm biến
         </Button>
-          {isAdmin?( <Popconfirm
+          {isAdmin && (
+            <Button icon={<EditOutlined />} onClick={() => handleEditParams(record)}>
+              Sửa tham số
+            </Button>
+          )}
+          
+          {isAdmin && (
+            <Button icon={<CopyOutlined />} onClick={() => handleClone(record)} title="Sao chép cánh đồng">
+              Clone
+            </Button>
+          )}
+        {/* --- BẮT ĐẦU CHỨC NĂNG LÀM MỚI (CHỈ HIỂN THỊ UI) --- */}
+        {isAdmin && (
+          <Button 
+            icon={<ReloadOutlined />} 
+            style={{ 
+              color: '#52c41a',      // Màu xanh lá cây (Antd Success Color)
+              borderColor: '#52c41a' // Viền màu xanh lá
+            }}
+            title="Bắt đầu vụ mùa mới"
+            onClick={() => {
+              // Chỉnh hiển thị thông báo giả lập, không gọi API
+              message.info(`Demo: Đang giả lập làm mới cánh đồng "${record.id}"...`);
+              console.log("Mock Refresh for ID:", record.id);
+            }}
+          >
+            Mùa mới
+          </Button>
+        )}
+        {/* --- KẾT THÚC CHỨC NĂNG LÀM MỚI --- */}      
+
+
+        {isAdmin && (
+          <Popconfirm
             title="Xóa cánh đồng"
-            description={`Bạn có chắc chắn muốn xóa "${record.name}" không?`}
+            description={`Bạn có chắc chắn muốn xóa mã "${record.id}" không?`}
             onConfirm={() => handleDelete(record.id)}
             okText="Có, Xóa"
             cancelText="Hủy"
-          >
+            >
             <Button danger icon={<DeleteOutlined />}>Xóa</Button>
-          </Popconfirm>):
-          (
-            <span style={{ color: '#999' }}></span>)
-          }
+          </Popconfirm>
+          )}
         </Space>
       ),
     },
@@ -329,41 +285,43 @@ const handleClone = (record) => {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
           <Title level={3} style={{ margin: 0 }}>Danh sách cánh đồng</Title>
           <Space>
-          {/*}  <Button 
-              type="dashed" 
-              icon={<DownloadOutlined />} 
-              onClick={handleDownloadWeather}
-            >
-              Tải dữ liệu thời tiết
-            </Button> */}
-            
-            {/* Gọi hàm handleAddNew khi bấm nút Thêm */}
-            { isAdmin ? (<Button 
-              type="primary" 
-              icon={<PlusOutlined />} 
-              onClick={handleAddNew}
-            >
-              Thêm cánh đồng
-            </Button>): null
-            }
+            {isAdmin && (
+              <Button type="primary" icon={<PlusOutlined />} onClick={handleAddNew}>
+                Thêm cánh đồng
+              </Button>
+            )}
           </Space>
         </div>
 
-        {/* Bảng hiển thị danh sách */}
         <Table 
           columns={columns} 
           dataSource={fields} 
           rowKey="id" 
+          loading={loading} // Hiển thị xoay xoay khi đang gọi API
           pagination={{ 
             pageSize: 8,
-            position: ['bottomCenter'] // Căn giữa bộ chuyển trang cho đẹp 
-
+            position: ['bottomCenter'] 
           }} 
         />
       </Card>
-
-      {/* 2. Nhúng Component Popup vào đây */}
-      {/* Nó sẽ tàng hình cho đến khi isModalOpen được set thành true */}
+      {/* MODAL NHẬP TÊN ĐỂ CLONE */}
+      <Modal
+        title="Nhân bản cánh đồng"
+        open={cloneModalVisible}
+        onOk={confirmClone}
+        onCancel={() => setCloneModalVisible(false)}
+        okText="Nhân bản ngay"
+        cancelText="Hủy bỏ"
+        confirmLoading={loading}
+      >
+        <p>Nhập tên (ID) mới cho cánh đồng nhân bản từ <b>{sourceFieldId}</b>:</p>
+        <Input 
+          placeholder="Ví dụ: field_A_version2" 
+          value={newFieldId} 
+          onChange={(e) => setNewFieldId(e.target.value)}
+          onPressEnter={confirmClone} // Nhấn Enter để submit luôn cho tiện
+        />
+      </Modal>
       <FieldModal 
         open={isModalOpen} 
         onCancel={() => setIsModalOpen(false)} 
