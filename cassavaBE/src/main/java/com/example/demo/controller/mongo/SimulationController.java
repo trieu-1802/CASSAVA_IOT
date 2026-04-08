@@ -39,12 +39,30 @@ public class SimulationController {
         }
     }
 
-    @GetMapping("/data")
-    public ResponseEntity<?> getSimulationData(@RequestParam String fieldId) {
+    @GetMapping("/chart")
+    public ResponseEntity<?> getChart(@RequestParam String fieldId) {
 
         List<FieldSimulationResult> data =
                 simulationResultRepository.findByFieldIdOrderByTimeAsc(fieldId);
 
-        return ResponseEntity.ok(data);
+        List<String> labels = new ArrayList<>();
+        List<Double> yield = new ArrayList<>();
+        List<Double> irrigation = new ArrayList<>();
+        List<Double> leafArea = new ArrayList<>();
+
+        for (FieldSimulationResult r : data) {
+            labels.add(r.getTime().toString());
+            yield.add(r.getYield());
+            irrigation.add(r.getIrrigation());
+            leafArea.add(r.getLeafArea());
+        }
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("labels", labels);
+        result.put("yield", yield);
+        result.put("irrigation", irrigation);
+        result.put("leafArea", leafArea);
+
+        return ResponseEntity.ok(result);
     }
 }
