@@ -38,10 +38,10 @@ React SPA (5173) ──Axios──▶ Spring Boot API (8081) ──▶ MongoDB (
 
 ### Backend (`cassavaBE/src/main/java/com/example/demo/`)
 
-- **controller/**: REST endpoints — `FieldMongoController` (`/mongo/field`), `UserController` (`/api/auth`), `SensorValueController` (`/api/sensor-values`)
-- **service/**: Business logic — `FieldMongoService`, `MqttWeatherService` (MQTT subscriber + NASA fallback), `SensorValueService`
-- **entity/**: MongoDB document models — `Field` (with `Field(String name)` default constructor for fieldTest init), `User`, `FieldSensor`, `SensorValue`; legacy Firebase entities also in `entity/` (non-Mongo)
-- **repositories/**: Spring Data MongoDB repos
+- **controller/**: REST endpoints — `FieldMongoController` (`/mongo/field`), `UserController` (`/api/auth`), `SensorValueController` (`/api/sensor-values`), `SimulationController` (`/simulation`), `IrrigationHistoryController` (`/mongo/irrigation-history`)
+- **service/**: Business logic — `FieldMongoService`, `MqttWeatherService` (MQTT subscriber + NASA fallback), `SensorValueService`, `FieldSimulator` (crop simulation + auto irrigation history), `IrrigationHistoryService`
+- **entity/**: MongoDB document models — `Field` (with `Field(String name)` default constructor for fieldTest init), `User`, `FieldSensor`, `SensorValue`, `FieldSimulationResult`, `IrrigationHistory`; legacy Firebase entities also in `entity/` (non-Mongo)
+- **repositories/**: Spring Data MongoDB repos — includes `FieldSimulationResultRepository`, `IrrigationHistoryRepository`
 - **Jwt/**: `JwtUtils` (token gen/validation), `JwtAuthFilter` (request filter)
 - **config/**: `SecurityConfig` (CORS + auth rules), `WebConfig`
 - **firebase/**: Firebase Realtime Database integration
@@ -77,6 +77,32 @@ The MongoDB `Field` entity stores all customized parameters as flat individual f
 - `Field(String name)` constructor initializes all flat fields with defaults matching the Firebase `CustomizedParameters(name)` defaults (acreage=50, fieldCapacity=60, dripRate=1.6, etc.)
 - `Field(String id, double acreage, ...)` full constructor for explicit values
 - `Field()` no-arg constructor for MongoDB/Jackson deserialization
+
+### Crop Simulation Pipeline
+
+The simulation feature runs a cassava crop growth model using sensor data from MongoDB:
+
+1. `SimulationController` exposes two endpoints:
+   - `GET /simulation/run?fieldId=X` — triggers simulation for a field
+   - `GET /simulation/chart?fieldId=X` — returns chart data (labels, yield, irrigation, leafArea) from saved results
+2. `FieldSimulator` service orchestrates: fetches combined sensor data via `SensorValueService.getCombinedValues()`, creates a `Field` object (from `entity/Field.java`, the simulation model), loads weather data, runs the model, saves results to MongoDB, and **automatically saves irrigation history** when `autoIrrigation` is true
+3. `FieldSimulationResult` (collection: `simulation_result`) stores per-day results: fieldId, time, yield, irrigation, leafArea, labileCarbon
+4. `IrrigationHistory` (collection: `irrigation_history`) stores per-day irrigation records: fieldId, time, userName, amount (l/m2), duration (seconds). Computed from daily differences of cumulative irrigation in `results.get(2)`, matching Firebase `HistoryIrrigation` logic
+5. Results and irrigation history are replaced on each run (`deleteByFieldId` then `saveAll`)
+6. DOY-to-Date conversion: `year = 2023 + (doy-1)/365`, `dayOfYear = (doy-1)%365 + 1`
+
+**Important:** The simulation uses `entity/Field.java` (the crop model with `_results`, `loadAllWeatherDataFromMongo()`, `runModel()`), NOT `entity/MongoEntity/Field.java` (the MongoDB document).
+
+### Irrigation History API
+
+REST API for irrigation history records (collection: `irrigation_history`), mirroring Firebase `HistoryIrrigation`:
+
+- `GET /mongo/irrigation-history?fieldId=X` — list all history for a field (newest first)
+- `POST /mongo/irrigation-history` — create a record manually (body: `{ fieldId, time, userName, amount, duration }`)
+- `DELETE /mongo/irrigation-history/{id}` — delete one record
+- `DELETE /mongo/irrigation-history/field/{fieldId}` — delete all records for a field
+
+Records are also created automatically by `FieldSimulator` when running `/simulation/run`. Security: covered by `/mongo/**` permitAll rule.
 
 ## Git Remote
 
