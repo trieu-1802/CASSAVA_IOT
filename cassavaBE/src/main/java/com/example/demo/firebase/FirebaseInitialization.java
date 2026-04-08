@@ -24,9 +24,9 @@ public class FirebaseInitialization {
 
         String filePath;
         if (os.contains("win")) {
-            filePath = "/home/kien/Kin/LAB_IOT/version2/CASSAVA_IOT/cassavaBE/serviceAccountKey.json";// Đường dẫn cho Windows
+            filePath = "/home/kien/Kin/LAB_IOT/version2/CASSAVA_IOT/cassavaBE/cassavaBE/serviceAccountKey.json";// Đường dẫn cho Windows
         } else {
-            filePath = "/home/kien/Kin/LAB_IOT/version2/CASSAVA_IOT/cassavaBE/serviceAccountKey.json";// Đường dẫn cho Ubuntu hoặc các hệ điều hành Unix-like khác
+            filePath = "/home/kien/Kin/LAB_IOT/version2/CASSAVA_IOT/cassavaBE/cassavaBE/serviceAccountKey.json";// Đường dẫn cho Ubuntu hoặc các hệ điều hành Unix-like khác
         }
 
         File file = new File(filePath);
