@@ -36,73 +36,75 @@ React SPA (5173) ──Axios──▶ Spring Boot API (8081) ──▶ MongoDB (
                     (HiveMQ)    (weather)   (storage)
 ```
 
+Main app (`Demo1Application`) uses `@EnableCaching` and `@EnableScheduling`. A scheduled task in `FieldService` auto-calculates the crop model daily at 7:30 AM for Firebase-based fields.
+
 ### Backend (`cassavaBE/src/main/java/com/example/demo/`)
 
-- **controller/**: REST endpoints — `FieldMongoController` (`/mongo/field`), `UserController` (`/api/auth`), `SensorValueController` (`/api/sensor-values`), `SimulationController` (`/simulation`), `IrrigationHistoryController` (`/mongo/irrigation-history`)
-- **service/**: Business logic — `FieldMongoService`, `MqttWeatherService` (MQTT subscriber + NASA fallback), `SensorValueService`, `FieldSimulator` (crop simulation + auto irrigation history), `IrrigationHistoryService`
-- **entity/**: MongoDB document models — `Field` (with `Field(String name)` default constructor for fieldTest init), `User`, `FieldSensor`, `SensorValue`, `FieldSimulationResult`, `IrrigationHistory`; legacy Firebase entities also in `entity/` (non-Mongo)
+- **controller/**: REST endpoints:
+  - `FieldMongoController` (`/mongo/field`) — MongoDB field CRUD + clone
+  - `FieldSensorController` (`/mongo/field/{fieldId}/sensor`) — sensor-to-field mapping
+  - `SensorValueController` (`/sensor-values`) — sensor history and combined values
+  - `IrrigationHistoryController` (`/mongo/irrigation-history`) — irrigation records
+  - `SimulationController` (`/simulation`) — run/chart simulation
+  - `UserController` (`/api/auth`) — login, register, list users
+  - Legacy: `FieldController` (`/api/*` — Firebase-based), `NasaController` (`/api/nasa`), `ChartController` (`/api/chart-data`)
+- **service/**: Business logic — `FieldMongoService`, `MqttWeatherService` (MQTT subscriber + NASA fallback), `SensorValueService`, `FieldSimulator` (crop simulation + auto irrigation history), `IrrigationHistoryService`, `NasaBackupService`
+- **entity/**: Two separate `Field` classes (see disambiguation below), plus `User`, `FieldSensor`, `SensorValue`, `FieldSimulationResult`, `IrrigationHistory`, `Disease`; legacy Firebase entities also in `entity/` (non-Mongo)
 - **repositories/**: Spring Data MongoDB repos — includes `FieldSimulationResultRepository`, `IrrigationHistoryRepository`
 - **Jwt/**: `JwtUtils` (token gen/validation), `JwtAuthFilter` (request filter)
 - **config/**: `SecurityConfig` (CORS + auth rules), `WebConfig`
-- **firebase/**: Firebase Realtime Database integration
+- **firebase/**: Firebase Realtime Database integration, `CorsConfig` (see CORS note below)
 
-Auth flow: JWT with 24h expiry. Roles are ADMIN and USER. Public endpoints: `/api/auth/**` only. Token injected via `JwtAuthFilter` in the Spring Security filter chain.
+Auth flow: JWT with 24h expiry (HS512). Roles are ADMIN and USER. Public endpoints: `/api/auth/**` only; `/mongo/**` and `/simulation/**` are permitAll. Token injected via `JwtAuthFilter` in the Spring Security filter chain.
+
+**CORS gotcha**: `SecurityConfig` restricts CORS to `http://localhost:5173`, but `firebase/CorsConfig.java` has a separate `@Bean` allowing ALL origins for `/api/**`. Be aware of this dual configuration.
 
 ### Frontend (`CassavaFE/src/`)
 
-- **pages/**: Login, Register, FieldList, FieldDetail (4 tabs: disease, irrigation, yield, history), WeatherDashboard, WeatherDetail, UserList
-- **services/**: API clients (`api.js` has Axios interceptor for JWT, `fieldService.js`, `authService.js`, `weatherService.js`)
-- **contexts/**: `AuthContext` for global auth state
-- **routes/**: Route config with `PrivateRoute` protection
-- **components/**: `MainLayout` (sidebar+header), `FieldModal`
-- **utils/**: `exportExcel.js` (Excel export), `formatters.js`
+React 19 + Vite, Ant Design v6, React Router v7, Recharts for charts.
 
-UI framework: Ant Design. Routing: React Router DOM.
+- **pages/**: Login, Register, FieldList, FieldDetail (4 tabs: disease, irrigation, yield, history), WeatherDashboard, WeatherDetail, UserList
+- **services/**: Three separate Axios instances with different base URLs:
+  - `api.js` → `http://localhost:8081` (general API, JWT interceptor)
+  - `authService.js` → `http://localhost:8081/api` (auth endpoints, JWT interceptor)
+  - `fieldService.js` → `http://localhost:8081/mongo` (field/mongo endpoints, JWT interceptor)
+- **components/**: `MainLayout` (sidebar+header), `FieldModal`, `SimulationDashboard`
+- **utils/**: `exportExcel.js`, `formatters.js` — **both are empty stubs**
+- **contexts/**: `AuthContext.jsx` exists but is **empty/unused**
+- **routes/**: `PrivateRoute.jsx` exists but is **empty/unused** — no actual route protection
+
+Auth state is managed entirely via `localStorage` (key: `user` with `accessToken` and `isAdmin` fields). No Redux/Zustand/Context is used.
+
+### Two `Field` Entities — Critical Disambiguation
+
+- **`entity/Field.java`** (~1527 lines): The **crop simulation model**. Contains `_results`, `_weatherData`, `loadAllWeatherDataFromMongo()`, `runModel()`, soil/plant parameters, and irrigation logic. Used by `FieldSimulator` and `FieldService`.
+- **`entity/MongoEntity/Field.java`**: The **MongoDB document** (collection: `field`). Stores field configuration as flat fields (acreage, fieldCapacity, dripRate, autoIrrigation, etc.). Used by `FieldMongoService` for CRUD.
+
+These are completely separate classes. The simulation model is NOT the MongoDB document.
 
 ### IoT Data Flow
 
-MQTT broker (HiveMQ `broker.hivemq.com:1883`) → topic `/sensor/weatherStation` → `MqttWeatherService` validates and persists JSON sensor readings (`t`, `h`, `rai`, `rad`, `w`) to `sensor_value` collection. Falls back to NASA Power API if MQTT data is invalid, with a 10-minute cooldown between NASA calls.
+MQTT broker (HiveMQ `broker.hivemq.com:1883`) → topic `/sensor/weatherStation` → `MqttWeatherService` validates and persists JSON sensor readings to `sensor_value` collection. Falls back to NASA Power API if MQTT data is invalid, with a 10-minute cooldown between NASA calls.
+
+Sensor ID mapping: `t`→temperature, `h`→humidity, `rai`→rain, `rad`→radiation, `w`→wind.
+
+Validation ranges: temp -10–60°C, humidity 0–100%, rain 0–500mm, wind 0–50m/s. Values outside these ranges trigger the NASA backup fallback.
+
+### Crop Simulation Pipeline
+
+1. `GET /simulation/run?fieldId=X` triggers simulation
+2. `FieldSimulator` fetches combined sensor data via `SensorValueService.getCombinedValues()`, creates a `Field` object (from `entity/Field.java`), loads weather data, runs the model, saves results to MongoDB
+3. If `autoIrrigation` is true, automatically generates `IrrigationHistory` records
+4. `GET /simulation/chart?fieldId=X` returns chart data (labels, yield, irrigation, leafArea, labileCarbon)
+5. Results are replaced on each run (`deleteByFieldId` then `saveAll`)
+6. DOY-to-Date conversion: `year = 2023 + (doy-1)/365`, `dayOfYear = (doy-1)%365 + 1`
 
 ### Key External Dependencies
 
 - **MongoDB**: Remote instance at `112.137.129.218:27017`, database `iot_agriculture`
-- **Firebase**: Service account key expected at `serviceAccountKey.json` (path configured in `FirebaseInitializer`)
+- **Firebase**: Service account key expected at `D:\DATN\serviceAccountKey.json` (hardcoded Windows path in `FirebaseInitialization`)
 - **MQTT**: HiveMQ public broker
 - **APIs**: NASA Power (no key), OpenWeather (key in `MqttWeatherService`)
-
-### MongoDB Field Entity (`entity/MongoEntity/Field.java`)
-
-The MongoDB `Field` entity stores all customized parameters as flat individual fields (acreage, fieldCapacity, distanceBetweenRow, distanceBetweenHole, dripRate, autoIrrigation, numberOfHoles, fertilizationLevel, irrigationDuration, scaleRain) rather than a nested `CustomizedParameters` object. This differs from the legacy Firebase `Field` entity which uses `CustomizedParameters customized_parameters`.
-
-- `Field(String name)` constructor initializes all flat fields with defaults matching the Firebase `CustomizedParameters(name)` defaults (acreage=50, fieldCapacity=60, dripRate=1.6, etc.)
-- `Field(String id, double acreage, ...)` full constructor for explicit values
-- `Field()` no-arg constructor for MongoDB/Jackson deserialization
-
-### Crop Simulation Pipeline
-
-The simulation feature runs a cassava crop growth model using sensor data from MongoDB:
-
-1. `SimulationController` exposes two endpoints:
-   - `GET /simulation/run?fieldId=X` — triggers simulation for a field
-   - `GET /simulation/chart?fieldId=X` — returns chart data (labels, yield, irrigation, leafArea) from saved results
-2. `FieldSimulator` service orchestrates: fetches combined sensor data via `SensorValueService.getCombinedValues()`, creates a `Field` object (from `entity/Field.java`, the simulation model), loads weather data, runs the model, saves results to MongoDB, and **automatically saves irrigation history** when `autoIrrigation` is true
-3. `FieldSimulationResult` (collection: `simulation_result`) stores per-day results: fieldId, time, yield, irrigation, leafArea, labileCarbon
-4. `IrrigationHistory` (collection: `irrigation_history`) stores per-day irrigation records: fieldId, time, userName, amount (l/m2), duration (seconds). Computed from daily differences of cumulative irrigation in `results.get(2)`, matching Firebase `HistoryIrrigation` logic
-5. Results and irrigation history are replaced on each run (`deleteByFieldId` then `saveAll`)
-6. DOY-to-Date conversion: `year = 2023 + (doy-1)/365`, `dayOfYear = (doy-1)%365 + 1`
-
-**Important:** The simulation uses `entity/Field.java` (the crop model with `_results`, `loadAllWeatherDataFromMongo()`, `runModel()`), NOT `entity/MongoEntity/Field.java` (the MongoDB document).
-
-### Irrigation History API
-
-REST API for irrigation history records (collection: `irrigation_history`), mirroring Firebase `HistoryIrrigation`:
-
-- `GET /mongo/irrigation-history?fieldId=X` — list all history for a field (newest first)
-- `POST /mongo/irrigation-history` — create a record manually (body: `{ fieldId, time, userName, amount, duration }`)
-- `DELETE /mongo/irrigation-history/{id}` — delete one record
-- `DELETE /mongo/irrigation-history/field/{fieldId}` — delete all records for a field
-
-Records are also created automatically by `FieldSimulator` when running `/simulation/run`. Security: covered by `/mongo/**` permitAll rule.
 
 ## Git Remote
 
@@ -113,5 +115,5 @@ Records are also created automatically by `FieldSimulator` when running `/simula
 
 - Backend packaging is WAR (servlet-based with embedded Tomcat)
 - Java 17 required
-- CORS is configured to allow only `http://localhost:5173`
-- Frontend API base URL: `http://localhost:8081/api` (configured in `CassavaFE/src/services/api.js`)
+- Frontend API calls use three separate Axios instances — check which one matches the endpoint prefix before adding new API calls
+- MongoDB collections: `field`, `users`, `sensor_value`, `field_sensor`, `simulation_result`, `irrigation_history`, `diseases`

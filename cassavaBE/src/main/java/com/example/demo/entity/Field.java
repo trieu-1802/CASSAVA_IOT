@@ -346,6 +346,7 @@ public class Field {
 */
   public void loadAllWeatherDataFromMongo(List<String> mongoData) {
       List<List<Object>> weatherData = new ArrayList<>();
+      resetDoyStaticFields();
 
       // SimpleDateFormat để parse chuỗi "yyyy-MM-dd HH:mm:ss" không lệch 7h
       SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");

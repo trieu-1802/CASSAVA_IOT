@@ -45,13 +45,18 @@ public class FieldSimulator {
         // 4. Chạy mô phỏng
         field.runModel();
 
-        // 5. Lưu kết quả vào MongoDB
-        List<FieldSimulationResult> savedResults = saveResultsToMongo(fieldId, field);
+        // 5. Anchor: first weather data entry's date and DOY
+        String firstTimeStr = Field._weatherData.get(0).get(0).toString(); // "yyyy-MM-dd HH:mm:ss"
+        LocalDate baseDate = LocalDate.parse(firstTimeStr.substring(0, 10));
+        int baseDoy = (int) Math.floor(Double.parseDouble(Field._weatherData.get(0).get(1).toString()));
 
-        // 6. Lưu lịch sử tưới nếu autoIrrigation
-        List<IrrigationHistory> irrigationRecords = saveIrrigationHistory(fieldId, field);
+        // 6. Lưu kết quả vào MongoDB
+        List<FieldSimulationResult> savedResults = saveResultsToMongo(fieldId, field, baseDate, baseDoy);
 
-        // 7. Trả về kết quả
+        // 7. Lưu lịch sử tưới nếu autoIrrigation
+        List<IrrigationHistory> irrigationRecords = saveIrrigationHistory(fieldId, field, baseDate, baseDoy);
+
+        // 8. Trả về kết quả
         Map<String, Object> result = new HashMap<>();
         result.put("status", "success");
         result.put("message", "Mô phỏng hoàn tất cho field: " + fieldId);
@@ -62,7 +67,7 @@ public class FieldSimulator {
         return result;
     }
 
-    private List<IrrigationHistory> saveIrrigationHistory(String fieldId, Field field) {
+    private List<IrrigationHistory> saveIrrigationHistory(String fieldId, Field field, LocalDate baseDate, int baseDoy) {
         if (!field.autoIrrigation) {
             return Collections.emptyList();
         }
@@ -81,7 +86,6 @@ public class FieldSimulator {
         // Iterate each day, compute daily irrigation as difference of cumulative values
         for (int i = 1; i < results.get(2).size(); i++) {
             double irr = results.get(2).get(i) - results.get(2).get(i - 1);
-            irr *= 1; 
 
             if (irr <= 0) {
                 continue;
@@ -89,10 +93,8 @@ public class FieldSimulator {
 
             double duration = irr * field.acreage / (field.dripRate * field.numberOfHoles) * 3600; // seconds
 
-            int doy = (int) Math.ceil(results.get(8).get(i));
-            int year = 2023 + (doy - 1) / 365;
-            int dayOfYear = (doy - 1) % 365 + 1;
-            LocalDate localDate = LocalDate.ofYearDay(year, dayOfYear);
+            int doy = (int) Math.floor(results.get(8).get(i));
+            LocalDate localDate = baseDate.plusDays(doy - baseDoy);
             LocalDateTime dateTime = localDate.atTime(8, 0, 0); // irrigation at 8:00
             String formattedTime = dateTime.format(formatter);
 
@@ -106,7 +108,7 @@ public class FieldSimulator {
         return irrigationHistoryRepository.saveAll(toSave);
     }
 
-    private List<FieldSimulationResult> saveResultsToMongo(String fieldId, Field field) {
+    private List<FieldSimulationResult> saveResultsToMongo(String fieldId, Field field, LocalDate baseDate, int baseDoy) {
         List<List<Double>> results = field._results;
 
         if (results == null || results.isEmpty() || results.get(0).isEmpty()) {
@@ -118,11 +120,8 @@ public class FieldSimulator {
         List<FieldSimulationResult> toSave = new ArrayList<>();
 
         for (int i = 1; i < results.get(0).size(); i++) {
-            // Convert DOY to Date (same logic as writeDataCsvNew)
-            int doy = (int) Math.ceil(results.get(8).get(i));
-            int year = 2023 + (doy - 1) / 365;
-            int dayOfYear = (doy - 1) % 365 + 1;
-            LocalDate localDate = LocalDate.ofYearDay(year, dayOfYear);
+            int doy = (int) Math.floor(results.get(8).get(i));
+            LocalDate localDate = baseDate.plusDays(doy - baseDoy);
             Date time = Date.from(localDate.atStartOfDay(ZoneId.systemDefault()).toInstant());
 
             double yield = results.get(0).get(i);
