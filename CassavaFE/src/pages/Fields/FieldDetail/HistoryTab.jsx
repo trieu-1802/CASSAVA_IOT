@@ -90,16 +90,16 @@ const HistoryTab = ({ fieldId = 'fieldTest' }) => {
       sorter: (a, b) => dayjs(a.time).unix() - dayjs(b.time).unix(),
     },
     {
-      title: 'Lượng nước (Lít)',
+      title: 'Lượng nước (m³/ha)',
       dataIndex: 'amount',
       key: 'amount',
       render: (val) => (val ? val.toFixed(2) : '0'),
     },
     {
-      title: 'Thời gian tưới (Giây)',
+      title: 'Thời gian tưới (Phút)',
       dataIndex: 'duration',
       key: 'duration',
-      render: (ms) => (ms / 1000).toFixed(1),
+      render: (val) => val ? val.toFixed(1) : '0',
     },
   ];
 

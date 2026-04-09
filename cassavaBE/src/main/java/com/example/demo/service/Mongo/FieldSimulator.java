@@ -68,37 +68,28 @@ public class FieldSimulator {
     }
 
     private List<IrrigationHistory> saveIrrigationHistory(String fieldId, Field field, LocalDate baseDate, int baseDoy) {
-        if (!field.autoIrrigation) {
+        if (!field.autoIrrigation || field.listHistory.isEmpty()) {
             return Collections.emptyList();
         }
 
-        List<List<Double>> results = field._results;
-        if (results == null || results.get(2).isEmpty()) {
-            return Collections.emptyList();
-        }
-
-        // Clear old irrigation history for this field
         irrigationHistoryRepository.deleteByFieldId(fieldId);
 
         List<IrrigationHistory> toSave = new ArrayList<>();
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
-        // Iterate each day, compute daily irrigation as difference of cumulative values
-        for (int i = 1; i < results.get(2).size(); i++) {
-            double irr = results.get(2).get(i) - results.get(2).get(i - 1);
+        // Use exact irrigation events recorded during simulation (Field.java line 794-815)
+        for (com.example.demo.entity.HistoryIrrigation h : field.listHistory) {
+            double amountM3Ha = h.getAmount() * 10.0; // convert mm to m³/ha
+            double duration = h.getDuration(); // already in minutes
 
-            if (irr <= 0) {
-                continue;
-            }
+            // Field.java stores time with hardcoded 2024 year, but dayOfYear and hour:minute are correct
+            // Re-derive correct date using anchor-based approach
+            LocalDate originalDate = LocalDate.parse(h.getTime().substring(0, 10));
+            int doy = originalDate.getDayOfYear();
+            LocalDate correctedDate = baseDate.plusDays(doy - baseDoy);
 
-            double duration = irr * field.acreage / (field.dripRate * field.numberOfHoles) * 3600; // seconds
+            String correctedTime = correctedDate + " " + h.getTime().substring(11);
 
-            int doy = (int) Math.floor(results.get(8).get(i));
-            LocalDate localDate = baseDate.plusDays(doy - baseDoy);
-            LocalDateTime dateTime = localDate.atTime(8, 0, 0); // irrigation at 8:00
-            String formattedTime = dateTime.format(formatter);
-
-            toSave.add(new IrrigationHistory(fieldId, formattedTime, "admin", irr, duration));
+            toSave.add(new IrrigationHistory(fieldId, correctedTime, h.getUserName(), amountM3Ha, duration));
         }
 
         if (toSave.isEmpty()) {
@@ -125,7 +116,7 @@ public class FieldSimulator {
             Date time = Date.from(localDate.atStartOfDay(ZoneId.systemDefault()).toInstant());
 
             double yield = results.get(0).get(i);
-            double irrigation = results.get(2).get(i);
+            double irrigation = results.get(2).get(i) * 10.0; // convert mm to m³/ha
             double leafArea = results.get(3).get(i);
             double labileCarbon = results.get(4).get(i);
 

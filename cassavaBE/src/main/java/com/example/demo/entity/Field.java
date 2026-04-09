@@ -454,7 +454,7 @@ public class Field {
         double irr = (length > 1)
                 ? _results.get(2).get(length - 1) - _results.get(2).get(length - 2)
                 : _results.get(2).get(0);
-        return irr * 0.1; // convert from m3/ha to l/m2
+        return irr * 10.0; // convert mm to m³/ha
     }
 
     public void runModel() throws IOException {
