@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Layout, Menu, theme, Typography, Button, Dropdown, Space, Avatar } from 'antd';
+import React, { useState, useEffect } from 'react';
+import { Layout, Menu, theme, Typography, Button, Dropdown, Space, Avatar, Drawer } from 'antd';
 import { 
   AppstoreOutlined, 
   CloudOutlined, 
@@ -15,6 +15,18 @@ const { Header, Sider, Content } = Layout;
 const { Title } = Typography;
 const MainLayout = () => {
   const [collapsed, setCollapsed] = useState(false);
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
+  useEffect(() => {
+    const handleResize = () => {
+      const mobile = window.innerWidth < 768;
+      setIsMobile(mobile);
+      if (!mobile) setDrawerOpen(false);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 // 1. Lấy thông tin user từ localStorage để kiểm tra quyền
   const userData = JSON.parse(localStorage.getItem("user"));
   const isAdmin = userData?.isAdmin == true; //// Kiểm tra trường admin trong Token/User
@@ -82,88 +94,98 @@ const MainLayout = () => {
     navigate('/login');
   };
 
+  const siderContent = (
+    <>
+      <div style={{
+        height: 64,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: collapsed && !isMobile ? '0' : '0 16px',
+        transition: 'all 0.2s'
+      }}>
+        <img
+          src="/src/assets/images/logo-uet.png"
+          alt="logo"
+          style={{
+            width: 32,
+            height: 32,
+            marginRight: collapsed && !isMobile ? 0 : 12,
+            transition: 'all 0.2s'
+          }}
+        />
+        {(!collapsed || isMobile) && (
+          <Title level={4} style={{ color: 'white', margin: 0, whiteSpace: 'nowrap' }}>
+            SMART FARMING
+          </Title>
+        )}
+      </div>
+      <Menu
+        theme="dark"
+        mode="inline"
+        selectedKeys={[location.pathname]}
+        onClick={(info) => {
+          handleMenuClick(info);
+          if (isMobile) setDrawerOpen(false);
+        }}
+        items={menuItems}
+      />
+    </>
+  );
+
   return (
     <Layout style={{ minHeight: '100vh' }}>
-      <Sider trigger={null} collapsible collapsed={collapsed} theme="dark" width={250}>
-   {/*     <div style={{ height: 64, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          {/* Logo hoặc Tên ứng dụng */}
-         {/* <Title level={4} style={{ color: 'white', margin: 0 }}> 
-            {collapsed ? 'SF' : 'SMART FARMING'}
-          </Title>
-        </div> */}
-        <div style={{ 
-          height: 64, 
-          display: 'flex', 
-          alignItems: 'center', 
-          justifyContent: 'center',
-          padding: collapsed ? '0' : '0 16px', // Thêm padding khi mở rộng
-          transition: 'all 0.2s'
-        }}>
-        {/* Thêm ảnh Logo */}
-      <img 
-          src="/src/assets/images/logo-uet.png" // Thay bằng đường dẫn file logo của cậu
-          alt="logo" 
-          style={{ 
-          width: 32, 
-          height: 32, 
-          marginRight: collapsed ? 0 : 12, // Mất margin khi thu nhỏ
-          transition: 'all 0.2s'
-      }} 
-    />
-    
-      {/* Hiện tên ứng dụng nếu KHÔNG bị thu nhỏ */}
-      {!collapsed && (
-       <Title level={4} style={{ color: 'white', margin: 0, whiteSpace: 'nowrap' }}>
-        SMART FARMING
-        </Title>
-    )}
-  </div>
-        <Menu
-          theme="dark"
-          mode="inline"
-          selectedKeys={[location.pathname]} // Tự động highlight menu đang đứng
-          onClick={handleMenuClick}
-          items={menuItems}
-        />
-      </Sider>
-      
+      {isMobile ? (
+        <Drawer
+          placement="left"
+          open={drawerOpen}
+          onClose={() => setDrawerOpen(false)}
+          width={250}
+          styles={{ body: { padding: 0, background: '#001529' } }}
+          closable={false}
+        >
+          {siderContent}
+        </Drawer>
+      ) : (
+        <Sider trigger={null} collapsible collapsed={collapsed} theme="dark" width={250}>
+          {siderContent}
+        </Sider>
+      )}
+
       <Layout>
-        <Header style={{ padding: 0, background: colorBgContainer, display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingRight: 24 }}>
+        <Header style={{ padding: 0, background: colorBgContainer, display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingRight: 16 }}>
           <Button
             type="text"
-            icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-            onClick={() => setCollapsed(!collapsed)}
+            icon={isMobile || collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+            onClick={() => isMobile ? setDrawerOpen(true) : setCollapsed(!collapsed)}
             style={{ fontSize: '16px', width: 64, height: 64 }}
           />
-          
-       {/*   <Button type="primary" danger icon={<LogoutOutlined />} onClick={handleLogout}>
-            Đăng xuất
-          </Button> */}
-         {/* Chỗ thay đổi đây Kiên nhé */}
+
           <Dropdown menu={{ items: userMenuItems }} trigger={['click']}>
             <div style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
-             <Space>
-               <Avatar icon={<UserOutlined />} style={{ backgroundColor: '#1677ff' }} />
+              <Space>
+                <Avatar icon={<UserOutlined />} style={{ backgroundColor: '#1677ff' }} />
+                {!isMobile && (
                   <span style={{ fontWeight: '500', fontSize: '14px' }}>
-                 {userData?.username || 'Người dùng'} 
+                    {userData?.username || 'Người dùng'}
                   </span>
-                  <DownOutlined style={{ fontSize: '10px', color: '#8c8c8c' }} />
-             </Space>
-           </div>
-          </Dropdown> 
+                )}
+                <DownOutlined style={{ fontSize: '10px', color: '#8c8c8c' }} />
+              </Space>
+            </div>
+          </Dropdown>
         </Header>
-        
+
         <Content
           style={{
-            margin: '24px 16px',
-            padding: 24,
+            margin: isMobile ? '12px 8px' : '24px 16px',
+            padding: isMobile ? 12 : 24,
             minHeight: 280,
             background: colorBgContainer,
             borderRadius: borderRadiusLG,
             overflow: 'auto'
           }}
         >
-          {/* Điểm mấu chốt: <Outlet /> chính là cái "lỗ hổng" để nhúng các trang con (như FieldList) vào giữa Layout */}
           <Outlet />
         </Content>
       </Layout>

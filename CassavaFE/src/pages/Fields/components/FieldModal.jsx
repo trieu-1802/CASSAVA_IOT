@@ -111,11 +111,12 @@ const FieldModal = ({ open, onCancel, onSubmit, initialData }) => {
       onCancel={onCancel}
       okText="Lưu lại"
       cancelText="Hủy"
-      width={700}
+      width="90%"
+      style={{ maxWidth: 700 }}
     >
       <Form form={form} layout="vertical" name="field_form">
         <Row gutter={16}>
-          <Col span={12}>
+          <Col xs={24} sm={12}>
             <Form.Item
               name="id"
               label="Mã cánh đồng (ID)"
@@ -124,7 +125,7 @@ const FieldModal = ({ open, onCancel, onSubmit, initialData }) => {
               <Input placeholder="Ví dụ: Field_A1" disabled={!!initialData} />
             </Form.Item>
           </Col>
-          <Col span={12}>
+          <Col xs={24} sm={12}>
             <Form.Item
               name="acreage"
               label="Diện tích (m²)"
@@ -138,17 +139,17 @@ const FieldModal = ({ open, onCancel, onSubmit, initialData }) => {
         <Divider orientation="left" plain style={{ fontSize: '12px', color: '#999' }}>Thông số canh tác</Divider>
 
         <Row gutter={16}>
-          <Col span={8}>
+          <Col xs={24} sm={8}>
             <Form.Item name="fieldCapacity" label="Field Capacity">
               <InputNumber style={{ width: '100%' }} min={0} max={1} step={0.01} placeholder="0.8" />
             </Form.Item>
           </Col>
-          <Col span={8}>
+          <Col xs={24} sm={8}>
             <Form.Item name="distanceBetweenRow" label="Khoảng cách hàng (m)">
               <InputNumber style={{ width: '100%' }} min={0} step={0.1} />
             </Form.Item>
           </Col>
-          <Col span={8}>
+          <Col xs={24} sm={8}>
             <Form.Item name="distanceBetweenHole" label="Khoảng cách lỗ (m)">
               <InputNumber style={{ width: '100%' }} min={0} step={0.1} />
             </Form.Item>
@@ -156,17 +157,17 @@ const FieldModal = ({ open, onCancel, onSubmit, initialData }) => {
         </Row>
 
         <Row gutter={16}>
-          <Col span={8}>
+          <Col xs={24} sm={8}>
             <Form.Item name="numberOfHoles" label="Tổng số lỗ tưới">
               <InputNumber style={{ width: '100%' }} min={0} precision={0} />
             </Form.Item>
           </Col>
-          <Col span={8}>
+          <Col xs={24} sm={8}>
             <Form.Item name="dripRate" label="Tốc độ nhỏ giọt (L/h)">
               <InputNumber style={{ width: '100%' }} min={0} step={0.5} />
             </Form.Item>
           </Col>
-          <Col span={8}>
+          <Col xs={24} sm={8}>
             <Form.Item name="fertilizationLevel" label="Mức độ phân bón">
               <InputNumber style={{ width: '100%' }} min={0} step={0.1} />
             </Form.Item>

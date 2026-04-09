@@ -219,59 +219,49 @@ const FieldList = () => {
       key: 'action',
       align: 'center',
       render: (_, record) => (
-        <Space size="middle">
+        <Space size="small" wrap>
           <Button type="primary" icon={<EyeOutlined />} onClick={() => handleViewDetail(record.id)}>
             Chi tiết
           </Button>
-           <Button 
-          type="primary" 
-          icon={<CloudOutlined />} // Cậu import icon này từ antd-icons nhé
-          onClick={() => navigate(`/weather/${record.id}`)}
+          <Button
+            type="primary"
+            icon={<CloudOutlined />}
+            onClick={() => navigate(`/weather/${record.id}`)}
           >
-        Xem cảm biến
-        </Button>
+            Xem cảm biến
+          </Button>
           {isAdmin && (
             <Button icon={<EditOutlined />} onClick={() => handleEditParams(record)}>
               Sửa tham số
             </Button>
           )}
-          
           {isAdmin && (
             <Button icon={<CopyOutlined />} onClick={() => handleClone(record)} title="Sao chép cánh đồng">
               Clone
             </Button>
           )}
-        {/* --- BẮT ĐẦU CHỨC NĂNG LÀM MỚI (CHỈ HIỂN THỊ UI) --- */}
-        {isAdmin && (
-          <Button 
-            icon={<ReloadOutlined />} 
-            style={{ 
-              color: '#52c41a',      // Màu xanh lá cây (Antd Success Color)
-              borderColor: '#52c41a' // Viền màu xanh lá
-            }}
-            title="Bắt đầu vụ mùa mới"
-            onClick={() => {
-              // Chỉnh hiển thị thông báo giả lập, không gọi API
-              message.info(`Demo: Đang giả lập làm mới cánh đồng "${record.id}"...`);
-              console.log("Mock Refresh for ID:", record.id);
-            }}
-          >
-            Mùa mới
-          </Button>
-        )}
-        {/* --- KẾT THÚC CHỨC NĂNG LÀM MỚI --- */}      
-
-
-        {isAdmin && (
-          <Popconfirm
-            title="Xóa cánh đồng"
-            description={`Bạn có chắc chắn muốn xóa mã "${record.id}" không?`}
-            onConfirm={() => handleDelete(record.id)}
-            okText="Có, Xóa"
-            cancelText="Hủy"
+          {isAdmin && (
+            <Button
+              icon={<ReloadOutlined />}
+              style={{ color: '#52c41a', borderColor: '#52c41a' }}
+              title="Bắt đầu vụ mùa mới"
+              onClick={() => {
+                message.info(`Demo: Đang giả lập làm mới cánh đồng "${record.id}"...`);
+              }}
             >
-            <Button danger icon={<DeleteOutlined />}>Xóa</Button>
-          </Popconfirm>
+              Mùa mới
+            </Button>
+          )}
+          {isAdmin && (
+            <Popconfirm
+              title="Xóa cánh đồng"
+              description={`Bạn có chắc chắn muốn xóa mã "${record.id}" không?`}
+              onConfirm={() => handleDelete(record.id)}
+              okText="Có, Xóa"
+              cancelText="Hủy"
+            >
+              <Button danger icon={<DeleteOutlined />}>Xóa</Button>
+            </Popconfirm>
           )}
         </Space>
       ),
@@ -280,9 +270,9 @@ const FieldList = () => {
 
   // --- RENDER GIAO DIỆN ---
   return (
-    <div style={{ padding: '24px' }}>
-      <Card>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+    <div style={{ padding: '16px' }}>
+      <Card style={{ overflow: 'hidden' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
           <Title level={3} style={{ margin: 0 }}>Danh sách cánh đồng</Title>
           <Space>
             {isAdmin && (
@@ -293,15 +283,16 @@ const FieldList = () => {
           </Space>
         </div>
 
-        <Table 
-          columns={columns} 
-          dataSource={fields} 
-          rowKey="id" 
-          loading={loading} // Hiển thị xoay xoay khi đang gọi API
-          pagination={{ 
+        <Table
+          columns={columns}
+          dataSource={fields}
+          rowKey="id"
+          loading={loading}
+          scroll={{ x: 'max-content' }}
+          pagination={{
             pageSize: 8,
-            position: ['bottomCenter'] 
-          }} 
+            position: ['bottomCenter']
+          }}
         />
       </Card>
       {/* MODAL NHẬP TÊN ĐỂ CLONE */}
