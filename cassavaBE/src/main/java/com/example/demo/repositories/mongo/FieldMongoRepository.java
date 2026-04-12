@@ -8,4 +8,5 @@ import java.util.List;
 public interface FieldMongoRepository extends MongoRepository<Field, String> {
 
     List<Field> findByIdUser(String idUser);
+    boolean existsByName(String name);
 }

@@ -68,11 +68,26 @@ public class FieldMongoController {
         fieldService.delete(id);
         return "Deleted successfully";
     }
+    // ========================
+    // RESET CROP CYCLE ("Mùa mới")
+    // ========================
+    @PostMapping("/resetCrop/{id}")
+    public ResponseEntity<?> resetCrop(@PathVariable String id) {
+        try {
+            Field updated = fieldService.resetCropCycle(id);
+            return ResponseEntity.ok(updated);
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(e.getMessage());
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Lỗi hệ thống");
+        }
+    }
+
     @PostMapping("/clone/{id}")
     public ResponseEntity<?> clone(@PathVariable String id, @RequestBody Map<String, String> body) {
         try {
-            String newId = body.get("newId");
-            Field clonedField = fieldService.clone(id, newId);
+            String newName = body.get("newName");
+            Field clonedField = fieldService.clone(id, newName);
             return ResponseEntity.status(HttpStatus.CREATED).body(clonedField);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(e.getMessage());

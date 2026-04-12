@@ -118,11 +118,11 @@ const FieldModal = ({ open, onCancel, onSubmit, initialData }) => {
         <Row gutter={16}>
           <Col xs={24} sm={12}>
             <Form.Item
-              name="id"
-              label="Mã cánh đồng (ID)"
-              rules={[{ required: true, message: 'Vui lòng nhập ID!' }]}
+              name="name"
+              label="Tên cánh đồng"
+              rules={[{ required: true, message: 'Vui lòng nhập tên cánh đồng!' }]}
             >
-              <Input placeholder="Ví dụ: Field_A1" disabled={!!initialData} />
+              <Input placeholder="Ví dụ: Cánh đồng A1" />
             </Form.Item>
           </Col>
           <Col xs={24} sm={12}>

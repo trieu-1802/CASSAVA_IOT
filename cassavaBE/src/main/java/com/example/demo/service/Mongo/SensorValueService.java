@@ -26,47 +26,57 @@ public class SensorValueService {
         return repository.findByFieldIdAndSensorIdOrderByTimeDesc(fieldId, sensorId);
     }
     /**
-     * gom các dữ liệu thành 1 hàng
+     * Gom dữ liệu cảm biến theo từng giờ: bucket time xuống đầu giờ, lấy trung bình
+     * mỗi loại sensor trong cùng 1 giờ, rồi trả về 1 hàng / 1 giờ. Dùng cho mô hình
+     * tính ET0 theo giờ trong Field.java.
      */
     public List<String> getCombinedValues(String fieldId) {
         // 1. Lọc theo fieldId
         MatchOperation matchStage = Aggregation.match(Criteria.where("fieldId").is(fieldId));
-        // 2. Gom nhóm theo thời gian (time)
-        GroupOperation groupStage = Aggregation.group("time")
-                .first("time").as("time")
-                // Sử dụng toán tử điều kiện để nhặt giá trị đúng loại sensor
-                .push(new BasicDBObject("k", "$sensorId").append("v", "$value")).as("sensors");
-        // 3. Sắp xếp thời gian mới nhất lên đầu
-        //  SortOperation sortStage = Aggregation.sort(org.springframework.data.domain.Sort.Direction.DESC, "time");
-        // sort from old to new
+
+        // 2. Gắn thêm hourTime = time làm tròn xuống đầu giờ (UTC)
+        AggregationOperation addHourStage = context -> new Document("$addFields",
+                new Document("hourTime", new Document("$dateTrunc",
+                        new Document("date", "$time").append("unit", "hour"))));
+
+        // 3. Gom theo (hourTime, sensorId) và lấy trung bình giá trị trong cùng 1 giờ
+        AggregationOperation avgPerSensorStage = context -> new Document("$group",
+                new Document("_id", new Document("hourTime", "$hourTime").append("sensorId", "$sensorId"))
+                        .append("value", new Document("$avg", "$value")));
+
+        // 4. Gom tất cả sensor của cùng 1 giờ thành 1 hàng
+        AggregationOperation groupByHourStage = context -> new Document("$group",
+                new Document("_id", "$_id.hourTime")
+                        .append("time", new Document("$first", "$_id.hourTime"))
+                        .append("sensors", new Document("$push",
+                                new Document("k", "$_id.sensorId").append("v", "$value"))));
+
+        // 5. Sắp xếp thời gian tăng dần
         SortOperation sortStage = Aggregation.sort(org.springframework.data.domain.Sort.Direction.ASC, "time");
-        Aggregation aggregation = Aggregation.newAggregation(matchStage, groupStage, sortStage)
-                // THÊM DÒNG NÀY ĐỂ FIX LỖI:
+
+        Aggregation aggregation = Aggregation.newAggregation(
+                        matchStage, addHourStage, avgPerSensorStage, groupByHourStage, sortStage)
                 .withOptions(Aggregation.newAggregationOptions().allowDiskUse(true).build());
-        AggregationResults<Document> results = mongoTemplate.aggregate(aggregation, "sensor_value", org.bson.Document.class);
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+
+        AggregationResults<Document> results = mongoTemplate.aggregate(aggregation, "sensor_value", Document.class);
+
         return results.getMappedResults().stream().map(doc -> {
-         //    java.util.Date timeDate = doc.getDate("time");
-            // Chuyển Date sang String định dạng yêu cầu
-           // String timeStr = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(timeDate);
-            // Cách xử lý KHÔNG cộng thêm 7 giờ
+            // hourTime là BSON Date đã truncate xuống đầu giờ; format UTC để không lệch 7h
             java.util.Date timeDate = doc.getDate("time");
-            // Sử dụng SimpleDateFormat và SET TIMEZONE là UTC để nó không tự cộng 7
             java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
             sdf.setTimeZone(java.util.TimeZone.getTimeZone("UTC"));
-
             String timeStr = sdf.format(timeDate);
-            // Lấy list sensors đã push vào
-            List<org.bson.Document> sensors = (List<org.bson.Document>) doc.get("sensors");
 
-            // Tìm giá trị tương ứng từng loại (nếu thiếu thì để 0.0)
+            @SuppressWarnings("unchecked")
+            List<Document> sensors = (List<Document>) doc.get("sensors");
+
+            // Trung bình mỗi loại trong giờ đó (rainfall tính mm/day nên cũng lấy avg)
             double rad = getValue(sensors, "radiation");
             double temp = getValue(sensors, "temperature");
-            double rain = getValue(sensors, "rainfall");
+            double rain = getValue(sensors, "rain");
             double hum = getValue(sensors, "humidity");
             double wind = getValue(sensors, "wind");
 
-            // Trả về đúng định dạng chuỗi Kiên yêu cầu
             return String.format("%s,%s,%f,%f,%f,%f,%f",
                     timeStr, timeStr, rad, temp, rain, hum, wind);
         }).collect(Collectors.toList());

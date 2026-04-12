@@ -20,4 +20,6 @@ public interface SensorValueRepository extends MongoRepository<SensorValue, Stri
     );
     // Lấy danh sách giá trị theo Field và loại Sensor, sắp xếp thời gian mới nhất lên đầu
     List<SensorValue> findByFieldIdAndSensorIdOrderByTimeDesc(String fieldId, String sensorId);
+
+    void deleteByFieldId(String fieldId);
 }

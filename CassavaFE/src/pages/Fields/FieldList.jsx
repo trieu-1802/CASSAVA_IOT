@@ -136,11 +136,28 @@ const FieldList = () => {
     }
   };
 
+  const handleResetCrop = async (id) => {
+    if (!isAdmin) {
+      return message.error('Lỗi: Bạn không có quyền thực hiện hành động này!');
+    }
+    setLoading(true);
+    try {
+      await fieldService.post(`/field/resetCrop/${id}`);
+      message.success('Đã bắt đầu vụ mùa mới cho cánh đồng!');
+      fetchFields();
+    } catch (error) {
+      console.error('Reset crop error:', error);
+      message.error(error.response?.data || 'Không thể làm mới cánh đồng!');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleClone = (record) => {
     // TODO: Gửi request POST lên BE với dữ liệu copy từ record
     message.info("Tính năng clone xuống DB đang được phát triển");
     setSourceFieldId(record.id);
-    setNewFieldId(`${record.id}_copy`);
+    setNewFieldId(`${record.name}_copy`);
     setCloneModalVisible(true);  // Mở popup
   };
   const confirmClone = async () => {
@@ -152,11 +169,11 @@ const FieldList = () => {
     try {
       // Gọi API clone: POST /api/fields/{sourceId}/clone
       // Body gửi lên là { newId: "tên mới" }
-      await fieldService.post(`/field/clone/${sourceFieldId}`, { 
-        newId: newFieldId 
+      await fieldService.post(`/field/clone/${sourceFieldId}`, {
+        newName: newFieldId
       });
 
-      message.success(`Nhân bản cánh đồng "${sourceFieldId}" thành "${newFieldId}" thành công!`);
+      message.success(`Nhân bản cánh đồng thành "${newFieldId}" thành công!`);
       setCloneModalVisible(false);
       fetchFields(); // Tải lại danh sách để thấy cánh đồng mới
     } catch (error) {
@@ -171,9 +188,9 @@ const FieldList = () => {
   // --- CẤU HÌNH CÁC CỘT CHO BẢNG MỚI KHỚP VỚI JSON TỪ BACKEND ---
   const columns = [
     {
-      title: 'Tên Cánh Đồng', // Tạm dùng ID vì BE chưa có Name
-      dataIndex: 'id',
-      key: 'id',
+      title: 'Tên Cánh Đồng',
+      dataIndex: 'name',
+      key: 'name',
       render: (text) => <strong>{text}</strong>,
     },
   /**   {
@@ -241,21 +258,33 @@ const FieldList = () => {
             </Button>
           )}
           {isAdmin && (
-            <Button
-              icon={<ReloadOutlined />}
-              style={{ color: '#52c41a', borderColor: '#52c41a' }}
+            <Popconfirm
               title="Bắt đầu vụ mùa mới"
-              onClick={() => {
-                message.info(`Demo: Đang giả lập làm mới cánh đồng "${record.id}"...`);
-              }}
+              description={
+                <div style={{ maxWidth: 280 }}>
+                  Hành động này sẽ <strong>xóa toàn bộ</strong> dữ liệu cảm biến,
+                  kết quả mô phỏng và lịch sử tưới của cánh đồng "{record.name}",
+                  đồng thời đặt lại thời gian bắt đầu vụ. Bạn có chắc chắn?
+                </div>
+              }
+              onConfirm={() => handleResetCrop(record.id)}
+              okText="Có, bắt đầu vụ mới"
+              cancelText="Hủy"
+              okButtonProps={{ danger: true }}
             >
-              Mùa mới
-            </Button>
+              <Button
+                icon={<ReloadOutlined />}
+                style={{ color: '#52c41a', borderColor: '#52c41a' }}
+                title="Bắt đầu vụ mùa mới"
+              >
+                Mùa mới
+              </Button>
+            </Popconfirm>
           )}
           {isAdmin && (
             <Popconfirm
               title="Xóa cánh đồng"
-              description={`Bạn có chắc chắn muốn xóa mã "${record.id}" không?`}
+              description={`Bạn có chắc chắn muốn xóa cánh đồng "${record.name}" không?`}
               onConfirm={() => handleDelete(record.id)}
               okText="Có, Xóa"
               cancelText="Hủy"
@@ -305,9 +334,9 @@ const FieldList = () => {
         cancelText="Hủy bỏ"
         confirmLoading={loading}
       >
-        <p>Nhập tên (ID) mới cho cánh đồng nhân bản từ <b>{sourceFieldId}</b>:</p>
-        <Input 
-          placeholder="Ví dụ: field_A_version2" 
+        <p>Nhập tên cho cánh đồng nhân bản:</p>
+        <Input
+          placeholder="Ví dụ: Cánh đồng A bản sao" 
           value={newFieldId} 
           onChange={(e) => setNewFieldId(e.target.value)}
           onPressEnter={confirmClone} // Nhấn Enter để submit luôn cho tiện

@@ -1,22 +1,29 @@
 // src/pages/Fields/FieldDetail/index.jsx
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Tabs, Card, Typography, Breadcrumb, Button } from 'antd';
 import { ArrowLeftOutlined } from '@ant-design/icons';
 import { useParams, useNavigate } from 'react-router-dom';
 
-// Import 4 component Tab vừa tạo
 import IrrigationTab from './IrrigationTab';
 import YieldTab from './YieldTab';
 import HistoryTab from './HistoryTab';
 import DiseaseTab from './DiseaseTab';
 import SimulationDashboard from '../components/SimulationDashboard';
+import fieldService from '../../../services/fieldService';
+
 const { Title } = Typography;
 
 const FieldDetailIndex = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const [fieldName, setFieldName] = useState('');
 
-  // Nhúng các component con vào cấu trúc Tabs
+  useEffect(() => {
+    fieldService.get(`/field/${id}`)
+      .then(res => setFieldName(res.data?.name || id))
+      .catch(() => setFieldName(id));
+  }, [id]);
+
   const tabItems = [
     { key: '1', label: 'Theo dõi tưới tiêu', children: <IrrigationTab /> },
     { key: '2', label: 'Dự đoán sản lượng', children: <SimulationDashboard fieldId={id} /> },
@@ -30,18 +37,18 @@ const FieldDetailIndex = () => {
         <Breadcrumb.Item>
           <a onClick={() => navigate('/fields')}>Danh sách cánh đồng</a>
         </Breadcrumb.Item>
-        <Breadcrumb.Item>Chi tiết cánh đồng #{id}</Breadcrumb.Item>
+        <Breadcrumb.Item>{fieldName}</Breadcrumb.Item>
       </Breadcrumb>
 
       <Card>
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: '20px' }}>
-          <Button 
-            type="text" 
-            icon={<ArrowLeftOutlined />} 
-            onClick={() => navigate('/fields')} 
+          <Button
+            type="text"
+            icon={<ArrowLeftOutlined />}
+            onClick={() => navigate('/fields')}
             style={{ marginRight: '16px' }}
           />
-          <Title level={3} style={{ margin: 0 }}>Thông tin cánh đồng #{id}</Title>
+          <Title level={3} style={{ margin: 0 }}>{fieldName}</Title>
         </div>
 
         <Tabs defaultActiveKey="1" items={tabItems} />

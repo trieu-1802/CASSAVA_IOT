@@ -49,6 +49,7 @@ public class Field {
 */
     @Id
     private String id;
+    private String name;
     private double acreage;
     private double fieldCapacity;
     private double distanceBetweenRow;
@@ -75,7 +76,7 @@ public class Field {
      * Usage: Field fieldTest = new Field("fieldTest");
      */
     public Field(String name) {
-        this.id = name;
+        this.name = name;
         this.acreage = 50;
         this.fieldCapacity = 60;
         this.distanceBetweenHole = 30;
@@ -94,10 +95,10 @@ public class Field {
     /**
      * Full constructor
      */
-    public Field(String id, double acreage, double fieldCapacity,
+    public Field(String name, double acreage, double fieldCapacity,
                  double distanceBetweenRow, double distanceBetweenHole, double dripRate,
                  boolean autoIrrigation, int numberOfHoles, double fertilizationLevel) {
-        this.id = id;
+        this.name = name;
         this.acreage = acreage;
         this.fieldCapacity = fieldCapacity;
         this.autoIrrigation = autoIrrigation;
@@ -111,6 +112,9 @@ public class Field {
     // ===== GETTERS / SETTERS =====
 
     public String getId() { return id; }
+
+    public String getName() { return name; }
+    public void setName(String name) { this.name = name; }
 
     public String getIdUser() { return idUser; }
     public void setIdUser(String idUser) { this.idUser = idUser; }

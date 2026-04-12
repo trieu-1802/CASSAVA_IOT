@@ -23,7 +23,8 @@ npm run preview       # preview production build
 cd cassavaBE
 mvn clean install     # build + download dependencies
 mvn spring-boot:run   # run at http://localhost:8081
-mvn test              # run tests
+mvn test              # run all tests
+mvn test -Dtest=ClassName#methodName   # run a single test
 ```
 
 ## Architecture
@@ -63,12 +64,12 @@ Auth flow: JWT with 24h expiry (HS512). Roles are ADMIN and USER. Public endpoin
 
 React 19 + Vite, Ant Design v6, React Router v7, Recharts for charts.
 
-- **pages/**: Login, Register, FieldList, FieldDetail (4 tabs: disease, irrigation, yield, history), WeatherDashboard, WeatherDetail, UserList
+- **pages/**: Grouped by feature — `Auth/` (Login, Register), `Fields/` (FieldList, FieldDetail with 4 tabs: DiseaseTab, IrrigationTab, YieldTab, HistoryTab — plus feature-local `components/FieldModal`, `components/SimulationDashboard`), `Weather/` (WeatherDashboard, WeatherDetail), `Users/` (UserList)
 - **services/**: Three separate Axios instances with different base URLs:
   - `api.js` → `http://localhost:8081` (general API, JWT interceptor)
   - `authService.js` → `http://localhost:8081/api` (auth endpoints, JWT interceptor)
   - `fieldService.js` → `http://localhost:8081/mongo` (field/mongo endpoints, JWT interceptor)
-- **components/**: `MainLayout` (responsive sidebar — uses `Drawer` on mobile <768px, collapsible `Sider` on desktop), `FieldModal`, `SimulationDashboard`
+- **components/**: `Layout/MainLayout` only (responsive sidebar — `Drawer` on mobile <768px, collapsible `Sider` on desktop). Feature-specific components live under their `pages/<feature>/components/` folder.
 - **utils/**: `exportExcel.js`, `formatters.js` — **both are empty stubs**
 - **contexts/**: `AuthContext.jsx` exists but is **empty/unused**
 - **routes/**: `PrivateRoute.jsx` exists but is **empty/unused** — no actual route protection
@@ -89,6 +90,8 @@ MQTT broker (HiveMQ `broker.hivemq.com:1883`) → topic `/sensor/weatherStation`
 Sensor ID mapping: `t`→temperature, `h`→humidity, `rai`→rain, `rad`→radiation, `w`→wind.
 
 Validation ranges: temp -10–60°C, humidity 0–100%, rain 0–500mm, wind 0–50m/s. Values outside these ranges trigger the NASA backup fallback.
+
+**Runtime artifact**: The Eclipse Paho MQTT client writes a persistence directory (e.g. `paho<id>-tcpbrokerhivemqcom1883/`) into the repo root when the backend runs. It is not source — ignore it and it should be gitignored.
 
 ### Crop Simulation Pipeline
 
