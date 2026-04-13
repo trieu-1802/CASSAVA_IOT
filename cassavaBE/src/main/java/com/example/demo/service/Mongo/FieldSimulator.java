@@ -3,10 +3,14 @@ package com.example.demo.service.Mongo;
 import com.example.demo.entity.Field;
 import com.example.demo.entity.MongoEntity.FieldSimulationResult;
 import com.example.demo.entity.MongoEntity.IrrigationHistory;
+import com.example.demo.repositories.mongo.FieldMongoRepository;
 import com.example.demo.repositories.mongo.FieldSimulationResultRepository;
 import com.example.demo.repositories.mongo.IrrigationHistoryRepository;
 import com.example.demo.service.Mongo.SensorValueService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -19,6 +23,8 @@ import java.util.*;
 @Service
 public class FieldSimulator {
 
+    private static final Logger log = LoggerFactory.getLogger(FieldSimulator.class);
+
     @Autowired
     private SensorValueService sensorValueService;
 
@@ -27,6 +33,30 @@ public class FieldSimulator {
 
     @Autowired
     private IrrigationHistoryRepository irrigationHistoryRepository;
+
+    @Autowired
+    private FieldMongoRepository fieldMongoRepository;
+
+    // Daily at 07:00 and 17:00 (server local time)
+    @Scheduled(cron = "0 0 7,17 * * *", zone = "Asia/Ho_Chi_Minh")
+    public void runScheduledSimulationForAllFields() {
+        List<com.example.demo.entity.MongoEntity.Field> fields = fieldMongoRepository.findAll();
+        log.info("Scheduled simulation starting for {} fields", fields.size());
+
+        int ok = 0;
+        int failed = 0;
+        for (com.example.demo.entity.MongoEntity.Field f : fields) {
+            String fieldId = f.getId();
+            try {
+                runSimulation(fieldId);
+                ok++;
+            } catch (Exception e) {
+                failed++;
+                log.error("Scheduled simulation failed for fieldId={}: {}", fieldId, e.getMessage());
+            }
+        }
+        log.info("Scheduled simulation finished: ok={}, failed={}", ok, failed);
+    }
 
     public Map<String, Object> runSimulation(String fieldId) throws IOException {
         // 1. Lấy dữ liệu từ MongoDB
