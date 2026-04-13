@@ -34,16 +34,17 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Card, Button, Typography, Spin, message, Empty } from 'antd';
 import { ArrowLeftOutlined, LoadingOutlined } from '@ant-design/icons';
 // 1. Import các thành phần của Recharts
-import { 
-  LineChart, 
-  Line, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  ResponsiveContainer, 
-  AreaChart, 
-  Area 
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  AreaChart,
+  Area
 } from 'recharts';
 import api from '../../services/api';
 
@@ -88,7 +89,66 @@ const WeatherDetail = () => {
     }
   };
   */
+ const SOIL_SERIES = [
+    { id: 'humidity30', label: 'Độ ẩm đất 30cm', color: '#13c2c2' },
+    { id: 'humidity60', label: 'Độ ẩm đất 60cm', color: '#08979c' },
+  ];
+  const isSoilHumidity = sensorId === 'soilHumidity';
+
+  const fetchSoilHumidity = async () => {
+    setLoading(true);
+    try {
+      const responses = await Promise.all(
+        SOIL_SERIES.map((s) =>
+          api.get(`/sensor-values/history`, {
+            params: { fieldId: 'fieldTest', sensorId: s.id },
+          })
+        )
+      );
+
+      const buckets = new Map();
+      const cutoff = (() => {
+        const latest = Math.max(
+          ...responses
+            .flatMap((r) => (r.data && r.data[0] ? [new Date(r.data[0].time).getTime()] : []))
+        );
+        return Number.isFinite(latest) ? latest - 24 * 60 * 60 * 1000 : 0;
+      })();
+
+      responses.forEach((res, idx) => {
+        const key = SOIL_SERIES[idx].id;
+        (res.data || []).forEach((item) => {
+          const t = new Date(item.time).getTime();
+          if (t < cutoff) return;
+          if (!buckets.has(t)) {
+            buckets.set(t, {
+              t,
+              time: new Date(item.time).toLocaleTimeString('vi-VN', {
+                hour: '2-digit',
+                minute: '2-digit',
+                timeZone: 'Asia/Ho_Chi_Minh',
+              }),
+              fullTime: new Date(item.time).toLocaleString('vi-VN', {
+                timeZone: 'Asia/Ho_Chi_Minh',
+              }),
+            });
+          }
+          buckets.get(t)[key] = item.value;
+        });
+      });
+
+      setData(Array.from(buckets.values()).sort((a, b) => a.t - b.t));
+    } catch {
+      message.error('Lỗi tải dữ liệu lịch sử');
+    } finally {
+      setLoading(false);
+    }
+  };
+
  const fetchHistory = async () => {
+  if (isSoilHumidity) {
+    return fetchSoilHumidity();
+  }
   setLoading(true);
   try {
     const response = await api.get(`/sensor-values/history`, {
@@ -141,11 +201,28 @@ const WeatherDetail = () => {
   const getChartColor = (id) => {
     switch(id) {
       case 'temperature': return '#ff4d4f';
-      case 'humidity': return '#1890ff';
-      case 'rainfall': return '#52c41a';
+      case 'relativeHumidity': return '#1890ff';
+      case 'humidity30': return '#13c2c2';
+      case 'humidity60': return '#08979c';
+      case 'rainfall':
+      case 'rain': return '#52c41a';
       default: return '#722ed1';
     }
   };
+
+  const SENSOR_NAMES_VI = {
+    temperature: 'Nhiệt độ môi trường',
+    relativeHumidity: 'Độ ẩm không khí',
+    humidity30: 'Độ ẩm đất 30cm',
+    humidity60: 'Độ ẩm đất 60cm',
+    soilHumidity: 'Độ ẩm đất (30cm & 60cm)',
+    rain: 'Lượng mưa tích lũy',
+    rainfall: 'Lượng mưa tích lũy',
+    radiation: 'Bức xạ mặt trời',
+    wind: 'Tốc độ gió',
+    wind_speed: 'Tốc độ gió',
+  };
+  const sensorNameVi = SENSOR_NAMES_VI[sensorId] || sensorId;
 
   return (
     <div style={{ padding: '24px' }}>
@@ -154,12 +231,38 @@ const WeatherDetail = () => {
       </Button>
       
       <Card 
-        title={<Title level={4} style={{ margin: 0 }}>Biểu đồ trực quan: {sensorId?.toUpperCase()}</Title>}
+        title={<Title level={4} style={{ margin: 0 }}>Biểu đồ trực quan: {sensorNameVi}</Title>}
         extra={<Text type="secondary">Dữ liệu 24h qua</Text>}
       >
         {loading ? (
           <div style={{ height: 400, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <Spin indicator={<LoadingOutlined style={{ fontSize: 40 }} spin />} />
+          </div>
+        ) : data.length > 0 && isSoilHumidity ? (
+          <div style={{ width: '100%', height: 400 }}>
+            <ResponsiveContainer>
+              <LineChart data={data} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="time" />
+                <YAxis unit="%" domain={[0, 100]} />
+                <Tooltip
+                  labelFormatter={(_, payload) => payload[0]?.payload?.fullTime}
+                />
+                <Legend />
+                {SOIL_SERIES.map((s) => (
+                  <Line
+                    key={s.id}
+                    type="monotone"
+                    dataKey={s.id}
+                    name={s.label}
+                    stroke={s.color}
+                    dot={false}
+                    connectNulls
+                    isAnimationActive={false}
+                  />
+                ))}
+              </LineChart>
+            </ResponsiveContainer>
           </div>
         ) : data.length > 0 ? (
           <div style={{ width: '100%', height: 400 }}>

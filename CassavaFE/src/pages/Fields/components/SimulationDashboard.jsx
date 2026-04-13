@@ -6,7 +6,7 @@ import YieldTab from '../FieldDetail/YieldTab'; // Import file biểu đồ vừ
 
 const { Title } = Typography;
 
-const SimulationDashboard = ({ fieldId }) => {
+const SimulationDashboard = ({ fieldId, fieldName }) => {
     const [chartData, setChartData] = useState([]);
     const [loading, setLoading] = useState(false);
 
@@ -88,7 +88,7 @@ const SimulationDashboard = ({ fieldId }) => {
     return (
         <div style={{ padding: '24px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-                <Title level={3} style={{ margin: 0 }}>Kết quả mô phỏng: {fieldId}</Title>
+                <Title level={3} style={{ margin: 0 }}>Kết quả mô phỏng: {fieldName || fieldId}</Title>
                 <Button icon={<ReloadOutlined />} onClick={fetchChartData} loading={loading}>
                     Làm mới dữ liệu
                 </Button>

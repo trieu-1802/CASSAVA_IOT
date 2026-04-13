@@ -27,6 +27,8 @@ mvn test              # run all tests
 mvn test -Dtest=ClassName#methodName   # run a single test
 ```
 
+Both FE and BE must run concurrently for development; the FE hardcodes `http://localhost:8081` in its three Axios instances (no Vite proxy config).
+
 ## Architecture
 
 ```
@@ -37,7 +39,7 @@ React SPA (5173) ──Axios──▶ Spring Boot API (8081) ──▶ MongoDB (
                     (HiveMQ)    (weather)   (storage)
 ```
 
-Main app (`Demo1Application`) uses `@EnableCaching` and `@EnableScheduling`. A scheduled task in `FieldService` auto-calculates the crop model daily at 7:30 AM for Firebase-based fields.
+Main app (`Demo1Application`) uses `@EnableCaching` and `@EnableScheduling`. A scheduled task in `FieldService` auto-calculates the crop model daily at 7:30 AM for **Firebase-based** fields only. MongoDB-backed fields do NOT auto-run — their simulations are triggered on-demand via `GET /simulation/run?fieldId=X`.
 
 ### Backend (`cassavaBE/src/main/java/com/example/demo/`)
 
@@ -72,7 +74,7 @@ React 19 + Vite, Ant Design v6, React Router v7, Recharts for charts.
 - **components/**: `Layout/MainLayout` only (responsive sidebar — `Drawer` on mobile <768px, collapsible `Sider` on desktop). Feature-specific components live under their `pages/<feature>/components/` folder.
 - **utils/**: `exportExcel.js`, `formatters.js` — **both are empty stubs**
 - **contexts/**: `AuthContext.jsx` exists but is **empty/unused**
-- **routes/**: `PrivateRoute.jsx` exists but is **empty/unused** — no actual route protection
+- **routes/**: `PrivateRoute.jsx` and `AppRoutes.jsx` exist but are **empty/unused** — no actual route protection; routing is defined inline in `App.jsx`
 
 Auth state is managed entirely via `localStorage` (key: `user` with `accessToken` and `isAdmin` fields). No Redux/Zustand/Context is used.
 

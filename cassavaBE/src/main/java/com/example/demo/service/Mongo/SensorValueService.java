@@ -74,7 +74,7 @@ public class SensorValueService {
             double rad = getValue(sensors, "radiation");
             double temp = getValue(sensors, "temperature");
             double rain = getValue(sensors, "rain");
-            double hum = getValue(sensors, "humidity");
+            double hum = getValue(sensors, "relativeHumidity");
             double wind = getValue(sensors, "wind");
 
             return String.format("%s,%s,%f,%f,%f,%f,%f",
