@@ -34,6 +34,9 @@ public class FieldMongoService {
     @Autowired
     private FieldSensorService fieldSensorService;
 
+    @Autowired
+    private com.example.demo.repositories.mongo.FieldSensorRepository fieldSensorRepository;
+
     // ========================
     // CREATE (FIXED)
     // ========================
@@ -167,6 +170,10 @@ public class FieldMongoService {
     // DELETE
     // ========================
     public void delete(String id) {
+        fieldSensorRepository.deleteByFieldId(id);
+        sensorValueRepository.deleteByFieldId(id);
+        simulationResultRepository.deleteByFieldId(id);
+        irrigationHistoryRepository.deleteByFieldId(id);
         fieldRepository.deleteById(id);
     }
 

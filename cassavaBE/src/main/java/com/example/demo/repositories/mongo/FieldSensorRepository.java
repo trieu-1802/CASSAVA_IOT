@@ -12,4 +12,6 @@ public interface FieldSensorRepository extends MongoRepository<FieldSensor, Stri
     List<FieldSensor> findByFieldId(String fieldId);
 
     void deleteByFieldIdAndSensorId(String fieldId, String sensorId);
+
+    void deleteByFieldId(String fieldId);
 }
