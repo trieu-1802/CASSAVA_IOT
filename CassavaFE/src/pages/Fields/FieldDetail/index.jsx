@@ -35,7 +35,7 @@ const FieldDetailIndex = () => {
     <div>
       <Breadcrumb style={{ marginBottom: '16px' }}>
         <Breadcrumb.Item>
-          <a onClick={() => navigate('/fields')}>Danh sách cánh đồng</a>
+          <a onClick={() => navigate(-1)}>Danh sách cánh đồng</a>
         </Breadcrumb.Item>
         <Breadcrumb.Item>{fieldName}</Breadcrumb.Item>
       </Breadcrumb>
@@ -45,7 +45,7 @@ const FieldDetailIndex = () => {
           <Button
             type="text"
             icon={<ArrowLeftOutlined />}
-            onClick={() => navigate('/fields')}
+            onClick={() => navigate(-1)}
             style={{ marginRight: '16px' }}
           />
           <Title level={3} style={{ margin: 0 }}>{fieldName}</Title>

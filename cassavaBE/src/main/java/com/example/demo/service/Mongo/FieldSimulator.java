@@ -66,8 +66,21 @@ public class FieldSimulator {
             throw new RuntimeException("Không có dữ liệu cảm biến cho cánh đồng này");
         }
 
-        // 2. Khởi tạo đối tượng Field
+        // 2. Khởi tạo Field và nạp cấu hình từ MongoDB
+        com.example.demo.entity.MongoEntity.Field cfg = fieldMongoRepository.findById(fieldId)
+                .orElseThrow(() -> new RuntimeException("Field not found: " + fieldId));
+
         Field field = new Field("field simulation");
+        field.acreage             = cfg.getAcreage();
+        field.fieldCapacity       = cfg.getFieldCapacity();
+        field.distanceBetweenRow  = cfg.getDistanceBetweenRow() * 100;  // m → cm
+        field.distanceBetweenHole = cfg.getDistanceBetweenHole() * 100; // m → cm
+        field.dripRate            = cfg.getDripRate();
+        field.numberOfHoles       = cfg.getNumberOfHoles();
+        field.fertilizationLevel  = cfg.getFertilizationLevel();
+        field.irrigationDuration  = cfg.getIrrigationDuration();
+        field.scaleRain           = cfg.getScaleRain();
+        field.autoIrrigation      = cfg.isAutoIrrigation();
 
         // 3. Nạp dữ liệu vào Model
         field.loadAllWeatherDataFromMongo(combinedData);
