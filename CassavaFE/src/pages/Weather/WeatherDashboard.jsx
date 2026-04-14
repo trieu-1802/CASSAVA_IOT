@@ -202,15 +202,31 @@ const WeatherDashboard = () => {
   const { fieldId } = useParams(); // Lấy ID cánh đồng từ URL
   const [sensors, setSensors] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [fieldName, setFieldName] = useState('');
+
+  useEffect(() => {
+    if (!fieldId) return;
+    fieldService
+      .get(`/field/${fieldId}`)
+      .then((res) => setFieldName(res.data?.name || fieldId))
+      .catch(() => setFieldName(fieldId));
+  }, [fieldId]);
 
   // Hàm bổ trợ để map sensorId từ BE sang giao diện (Icon, Tên, Đơn vị)
   const getSensorConfig = (sensorId) => {
+    const airHumidity = { name: 'Độ ẩm không khí', unit: '%', icon: <CloudOutlined style={{ color: '#096dd9' }} /> };
+    const rainCfg = { name: 'Lượng mưa tích lũy', unit: 'mm', icon: <DashboardOutlined style={{ color: '#3f6600' }} /> };
+    const windCfg = { name: 'Tốc độ gió', unit: 'm/s', icon: <CompassOutlined style={{ color: '#531dab' }} /> };
     const configs = {
       temperature: { name: 'Nhiệt độ môi trường', unit: '°C', icon: <FireOutlined style={{ color: '#cf1322' }} /> },
-      humidity: { name: 'Độ ẩm không khí', unit: '%', icon: <CloudOutlined style={{ color: '#096dd9' }} /> },
-      rainfall: { name: 'Lượng mưa tích lũy', unit: 'mm', icon: <DashboardOutlined style={{ color: '#3f6600' }} /> },
+      relativeHumidity: airHumidity,
+      humidity: airHumidity, // alias cho dữ liệu cũ trước khi đổi tên
+      soilHumidity: { name: 'Độ ẩm đất (30cm & 60cm)', unit: '%', icon: <CloudOutlined style={{ color: '#13c2c2' }} /> },
+      rain: rainCfg,
+      rainfall: rainCfg,
       radiation: { name: 'Bức xạ mặt trời', unit: 'W/m²', icon: <ThunderboltOutlined style={{ color: '#d48806' }} /> },
-      wind_speed: { name: 'Tốc độ gió', unit: 'm/s', icon: <CompassOutlined style={{ color: '#531dab' }} /> },
+      wind: windCfg,
+      wind_speed: windCfg,
     };
     // Trả về config tương ứng hoặc giá trị mặc định nếu không khớp
     return configs[sensorId] || { name: sensorId, unit: '', icon: <DashboardOutlined /> };
@@ -223,7 +239,17 @@ const WeatherDashboard = () => {
         // Gọi API lấy sensor theo fieldId
         // Lưu ý: Cậu kiểm tra lại chính xác endpoint BE của cậu nhé
         const response = await fieldService.get(`/field/${fieldId}/sensor`);
-        setSensors(response.data);
+        // Gộp humidity30 + humidity60 thành 1 mục hiển thị "soilHumidity"
+        const raw = response.data || [];
+        const hasSoil30 = raw.some((s) => s.sensorId === 'humidity30');
+        const hasSoil60 = raw.some((s) => s.sensorId === 'humidity60');
+        const filtered = raw.filter(
+          (s) => s.sensorId !== 'humidity30' && s.sensorId !== 'humidity60'
+        );
+        if (hasSoil30 || hasSoil60) {
+          filtered.push({ id: 'soil-humidity', sensorId: 'soilHumidity' });
+        }
+        setSensors(filtered);
       } catch (error) {
         console.error("Lỗi tải sensor:", error);
         message.error("Không thể lấy danh sách cảm biến của cánh đồng này!");
@@ -251,8 +277,8 @@ const WeatherDashboard = () => {
       <Card 
         title={
           <Space>
-            <Title level={3} style={{ margin: 0 }}>Trạm quan trắc: {fieldId}</Title>
-            <Tag color="blue">Cánh đồng {fieldId}</Tag>
+            <Title level={3} style={{ margin: 0 }}>Trạm quan trắc: {fieldName || '...'}</Title>
+            <Tag color="blue">Cánh đồng {fieldName || fieldId}</Tag>
           </Space>
         }
         extra={<Tag color="green">Đang kết nối</Tag>}

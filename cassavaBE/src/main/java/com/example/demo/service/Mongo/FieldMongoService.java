@@ -31,6 +31,12 @@ public class FieldMongoService {
     @Autowired
     private IrrigationHistoryRepository irrigationHistoryRepository;
 
+    @Autowired
+    private FieldSensorService fieldSensorService;
+
+    @Autowired
+    private com.example.demo.repositories.mongo.FieldSensorRepository fieldSensorRepository;
+
     // ========================
     // CREATE (FIXED)
     // ========================
@@ -51,7 +57,9 @@ public class FieldMongoService {
         field.setId(null);
         field.setStartTime(new Date());
 
-        return fieldRepository.save(field);
+        Field saved = fieldRepository.save(field);
+        fieldSensorService.initDefaultSensors(saved.getId());
+        return saved;
     }
     public Field clone (String srcFieldId, String newName) {
         if (newName == null || newName.trim().isEmpty()) {
@@ -162,6 +170,10 @@ public class FieldMongoService {
     // DELETE
     // ========================
     public void delete(String id) {
+        fieldSensorRepository.deleteByFieldId(id);
+        sensorValueRepository.deleteByFieldId(id);
+        simulationResultRepository.deleteByFieldId(id);
+        irrigationHistoryRepository.deleteByFieldId(id);
         fieldRepository.deleteById(id);
     }
 

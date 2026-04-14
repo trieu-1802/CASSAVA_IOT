@@ -26,7 +26,7 @@ public class FirebaseInitialization {
         if (os.contains("win")) {
             filePath = "D:\\DATN\\serviceAccountKey.json";// Đường dẫn cho Windows
         } else {
-            filePath = "/home/kien/Kin/LAB_IOT/version2/CASSAVA_IOT/cassavaBE/cassavaBE/serviceAccountKey.json";// Đường dẫn cho Ubuntu hoặc các hệ điều hành Unix-like khác
+            filePath = "/Users/trieuvh/Documents/thesis/serviceAccountKey.json";// Đường dẫn cho Ubuntu hoặc các hệ điều hành Unix-like khác
         }
 
         File file = new File(filePath);
