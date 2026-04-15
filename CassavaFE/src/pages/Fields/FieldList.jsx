@@ -122,7 +122,7 @@ const FieldList = () => {
     if (isAdmin) {
       try {
         // TODO: Mở comment dòng dưới khi BE đã có API xóa
-         await fieldService.delete(`/field/${id}`);
+         await fieldService.delete(`/field/delete/${id}`);
         
         // Tạm thời xóa trên giao diện để test
         const newData = fields.filter(item => item.id !== id);

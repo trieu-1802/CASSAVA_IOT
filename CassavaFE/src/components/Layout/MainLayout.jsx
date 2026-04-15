@@ -72,11 +72,11 @@ const MainLayout = () => {
       icon: <AppstoreOutlined />,
       label: 'Quản lý cánh đồng',
     },
-    {
-      key: '/weather',
-      icon: <CloudOutlined />,
-      label: 'Dữ liệu thời tiết',
-    },
+   // {
+   //   key: '/weather',
+   //   icon: <CloudOutlined />,
+   //   label: 'Dữ liệu thời tiết',
+   // },
    isAdmin ? {
       key: '/users',
       icon: <AppstoreOutlined />,

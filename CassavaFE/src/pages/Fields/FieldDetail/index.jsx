@@ -1,5 +1,5 @@
 // src/pages/Fields/FieldDetail/index.jsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, use } from 'react';
 import { Tabs, Card, Typography, Breadcrumb, Button } from 'antd';
 import { ArrowLeftOutlined } from '@ant-design/icons';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -10,23 +10,43 @@ import HistoryTab from './HistoryTab';
 import DiseaseTab from './DiseaseTab';
 import SimulationDashboard from '../components/SimulationDashboard';
 import fieldService from '../../../services/fieldService';
-
+import ManualIrrigationTab from './ManualIrrigationTab';
 const { Title } = Typography;
 
 const FieldDetailIndex = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const [fieldName, setFieldName] = useState('');
+  const [isAuto, setIsAuto] = useState(null); // Lưu trạng thái tưới tự động
 
+ // useEffect(() => {
+ //   fieldService.get(`/field/${id}`)
+ //     .then(res => setFieldName(res.data?.name || id))
+ //     .catch(() => setFieldName(id));
+ // }, [id]);
   useEffect(() => {
     fieldService.get(`/field/${id}`)
-      .then(res => setFieldName(res.data?.name || id))
+      .then(res => {
+        setFieldName(res.data?.name || id);
+        setIsAuto(res.data?.autoIrrigation);
+      })
       .catch(() => setFieldName(id));
   }, [id]);
 
   const tabItems = [
     { key: '1', label: 'Theo dõi tưới tiêu', children: <IrrigationTab /> },
-    { key: '2', label: 'Dự đoán sản lượng', children: <SimulationDashboard fieldId={id} /> },
+   // { key: '2', label: 'Dự đoán sản lượng', children: <SimulationDashboard fieldId={id} /> },
+   ...(isAuto === true ? [{ 
+      key: '2', 
+      label: 'Dự đoán sản lượng', 
+      children: <SimulationDashboard fieldId={id} /> 
+    }] : []),
+    // Nếu isAuto là false -> Hiện Cài đặt tưới tay
+    ...(isAuto === false ? [{ 
+      key: '2-manual', 
+      label: 'Cài đặt tưới tay', 
+      children: <ManualIrrigationTab fieldId={id} /> 
+    }] : []),
     { key: '3', label: 'Lịch sử tưới', children: <HistoryTab fieldId={id} />},
     { key: '4', label: 'Tình trạng bệnh', children: <DiseaseTab /> },
   ];
