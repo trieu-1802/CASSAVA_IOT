@@ -15,6 +15,7 @@ import FieldDetail from './pages/Fields/FieldDetail';
 
 import WeatherDashboard from './pages/Weather/WeatherDashboard';
 import WeatherDetail from "./pages/Weather/WeatherDetail";
+import WeatherFieldList from './pages/Weather/WeatherFieldList';
 // Import trang danh sách người dùng
 import UserList from './pages/Users/UserList';
 
@@ -38,8 +39,8 @@ function App() {
           {/* Trang hiển thị chi tiết 1 cánh đồng (Có chứa 4 Tab chức năng) */}
           <Route path="/fields/:id" element={<FieldDetail />} />
 
-          {/* TODO: Đường dẫn cho trang Thời Tiết (Chúng ta sẽ làm tiếp sau) */}
-          {/* <Route path="/weather" element={<WeatherDashboard />} /> */}
+          {/* Trang chọn cánh đồng để xem trạm quan trắc */}
+          <Route path="/weather" element={<WeatherFieldList />} />
           <Route path="/weather/:fieldId" element={<WeatherDashboard />} />
           <Route path="weather/detail/:sensorId" element={<WeatherDetail />} />
           {/*đường dẫn đến trang danh sách user*/}

@@ -65,8 +65,16 @@ public class MqttWeatherService {
                 list.add(new SensorValue(fieldId, "temperature", parse(data.get("t")), now));
             }
 
-            if (validSensors.contains("humidity") && data.get("h") != null) {
-                list.add(new SensorValue(fieldId, "humidity", parse(data.get("h")), now));
+            if (validSensors.contains("relativeHumidity") && data.get("h") != null) {
+                list.add(new SensorValue(fieldId, "relativeHumidity", parse(data.get("h")), now));
+            }
+
+            if (validSensors.contains("humidity30") && data.get("h30") != null) {
+                list.add(new SensorValue(fieldId, "humidity30", parse(data.get("h30")), now));
+            }
+
+            if (validSensors.contains("humidity60") && data.get("h60") != null) {
+                list.add(new SensorValue(fieldId, "humidity60", parse(data.get("h60")), now));
             }
 
             if (validSensors.contains("rain") && data.get("rai") != null) {

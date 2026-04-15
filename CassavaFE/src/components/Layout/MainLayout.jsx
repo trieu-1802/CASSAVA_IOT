@@ -80,7 +80,7 @@ const MainLayout = () => {
    isAdmin ? {
       key: '/users',
       icon: <AppstoreOutlined />,
-      label: 'danh sách người xem',
+      label: 'Danh sách người dùng',
     } : null
   
   ];

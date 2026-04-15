@@ -28,10 +28,10 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
                 String username = jwtUtils.getUserNameFromJwtToken(jwt);
                 // Đọc boolean từ JWT
-                boolean isAdmin = jwtUtils.getIsAdminFromJwtToken(jwt);
+                boolean admin = jwtUtils.getIsAdminFromJwtToken(jwt);
 
                 // Quy đổi logic boolean ra chuẩn của Spring Security
-                String roleString = isAdmin ? "ROLE_ADMIN" : "ROLE_USER";
+                String roleString = admin ? "ROLE_ADMIN" : "ROLE_USER";
                 SimpleGrantedAuthority authority = new SimpleGrantedAuthority(roleString);
 
                 UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(

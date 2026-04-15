@@ -67,7 +67,7 @@ public class MongoWeatherProvider implements WeatherProvider {
         double wind = getValue("wind", time);
         double rain = getValue("rain", time);
         double temp = getValue("temperature", time);
-        double humidity = getValue("humidity", time);
+        double humidity = getValue("relativeHumidity", time);
         double radiation = getValue("radiation", time);
 
         double ppfd = radiation * 2.15;
