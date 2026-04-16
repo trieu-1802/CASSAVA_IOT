@@ -140,8 +140,8 @@ const FieldModal = ({ open, onCancel, onSubmit, initialData }) => {
 
         <Row gutter={16}>
           <Col xs={24} sm={8}>
-            <Form.Item name="fieldCapacity" label="Field Capacity">
-              <InputNumber style={{ width: '100%' }} min={0} max={1} step={0.01} placeholder="0.8" />
+            <Form.Item name="fieldCapacity" label="Field Capacity (%)">
+              <InputNumber style={{ width: '100%' }} min={0} max={100} step={1} placeholder="60" />
             </Form.Item>
           </Col>
           <Col xs={24} sm={8}>

@@ -1,6 +1,9 @@
 package com.example.demo.service.Mongo;
 
 import com.example.demo.entity.MongoEntity.Field;
+import com.example.demo.entity.MongoEntity.FieldSimulationResult;
+import com.example.demo.entity.MongoEntity.IrrigationHistory;
+import com.example.demo.entity.MongoEntity.SensorValue;
 import com.example.demo.repositories.UserRepository;
 import com.example.demo.repositories.mongo.FieldMongoRepository;
 import com.example.demo.repositories.mongo.FieldSimulationResultRepository;
@@ -10,6 +13,7 @@ import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 
@@ -76,11 +80,39 @@ public class FieldMongoService {
 
         newField.setId(null);
         newField.setName(newName);
-        newField.setStartTime(new Date());
         newField.setIrrigating(false);
-        newField.setDAP(1);
 
-        return fieldRepository.save(newField);
+        Field saved = fieldRepository.save(newField);
+        String newFieldId = saved.getId();
+
+        fieldSensorService.initDefaultSensors(newFieldId);
+
+        List<SensorValue> sensorValues = sensorValueRepository.findByFieldId(srcFieldId);
+        List<SensorValue> clonedSensorValues = new ArrayList<>(sensorValues.size());
+        for (SensorValue sv : sensorValues) {
+            SensorValue copy = new SensorValue(newFieldId, sv.getSensorId(), sv.getValue(), sv.getTime());
+            clonedSensorValues.add(copy);
+        }
+        sensorValueRepository.saveAll(clonedSensorValues);
+
+        List<FieldSimulationResult> simResults = simulationResultRepository.findByFieldIdOrderByTimeAsc(srcFieldId);
+        List<FieldSimulationResult> clonedSimResults = new ArrayList<>(simResults.size());
+        for (FieldSimulationResult r : simResults) {
+            clonedSimResults.add(new FieldSimulationResult(
+                    newFieldId, r.getTime(), r.getYield(), r.getIrrigation(),
+                    r.getLeafArea(), r.getLabileCarbon()));
+        }
+        simulationResultRepository.saveAll(clonedSimResults);
+
+        List<IrrigationHistory> histories = irrigationHistoryRepository.findByFieldIdOrderByTimeDesc(srcFieldId);
+        List<IrrigationHistory> clonedHistories = new ArrayList<>(histories.size());
+        for (IrrigationHistory h : histories) {
+            clonedHistories.add(new IrrigationHistory(
+                    newFieldId, h.getTime(), h.getUserName(), h.getAmount(), h.getDuration()));
+        }
+        irrigationHistoryRepository.saveAll(clonedHistories);
+
+        return saved;
     }
 
     private void validateField(Field field) {
@@ -89,8 +121,8 @@ public class FieldMongoService {
             throw new RuntimeException("Acreage must be > 0");
         }
 
-        if (field.getFieldCapacity() <= 0 || field.getFieldCapacity() > 1) {
-            throw new RuntimeException("FieldCapacity must be between 0 and 1");
+        if (field.getFieldCapacity() <= 0 || field.getFieldCapacity() > 100) {
+            throw new RuntimeException("FieldCapacity must be between 0 and 100");
         }
 
         if (field.getDripRate() <= 0) {

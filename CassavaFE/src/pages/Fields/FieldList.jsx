@@ -10,7 +10,7 @@ import {
   ReloadOutlined,
   CloudOutlined
 } from '@ant-design/icons';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 
 // 1. Import file cấu hình Axios của cậu (Nhớ trỏ đúng đường dẫn)
 import fieldService from '../../services/fieldService'; 
@@ -23,6 +23,8 @@ const FieldList = () => {
   const userData = JSON.parse(localStorage.getItem('user'));
   const isAdmin = userData?.isAdmin === true;
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const currentPage = Number(searchParams.get('page')) || 1;
 
   // --- CÁC STATE QUẢN LÝ DỮ LIỆU VÀ GIAO DIỆN ---
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -154,8 +156,6 @@ const FieldList = () => {
   };
 
   const handleClone = (record) => {
-    // TODO: Gửi request POST lên BE với dữ liệu copy từ record
-    message.info("Tính năng clone xuống DB đang được phát triển");
     setSourceFieldId(record.id);
     setNewFieldId(`${record.name}_copy`);
     setCloneModalVisible(true);  // Mở popup
@@ -319,8 +319,12 @@ const FieldList = () => {
           loading={loading}
           scroll={{ x: 'max-content' }}
           pagination={{
+            current: currentPage,
             pageSize: 8,
-            position: ['bottomCenter']
+            position: ['bottomCenter'],
+            onChange: (page) => {
+              setSearchParams({ page: String(page) });
+            },
           }}
         />
       </Card>
