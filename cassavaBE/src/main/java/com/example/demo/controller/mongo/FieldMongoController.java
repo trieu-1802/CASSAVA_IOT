@@ -63,7 +63,7 @@ public class FieldMongoController {
     // ========================
     // DELETE
     // ========================
-    @DeleteMapping("/{id}")
+    @DeleteMapping("/delete/{id}")
     public String delete(@PathVariable String id) {
         fieldService.delete(id);
         return "Deleted successfully";

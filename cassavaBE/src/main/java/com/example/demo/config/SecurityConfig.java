@@ -74,18 +74,23 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         // Cho phép vào thẳng API đăng nhập không cần token
-                        .requestMatchers("/api/auth/**").permitAll()
+                        .requestMatchers("/api/auth/login","/api/auth/register").permitAll()
 
                         // Trạm thời tiết: User hoặc Admin đều xem được
                         .requestMatchers("/api/weather/**").hasAnyRole("USER", "ADMIN")
 
                         // Quản lý cánh đồng: Chỉ Admin mới được can thiệp
-                        .requestMatchers("/api/fields/**").hasRole("ADMIN")
+                                .requestMatchers("/api/auth/list",
+                                        "/mongo/field/createField",
+                                        "/mongo/field/updateField/**",
+                                        "/mongo/field/clone/**",
+                                        "/mongo/field/delete/**",
+                                        "/mongo/field/resetCrop/**").hasRole("ADMIN")
                         // SỬA Ở ĐÂY: Thêm cả "/mongo/field" (không gạch chéo) và "/mongo/field/**" (có gạch chéo)
                        // .requestMatchers("mongo/irrigation-history/**","/simulation/**","/api/sensor-values/**","/field/**","/mongo/**","/mongo/field", "/mongo/field/**").permitAll()
 
                         // Các API khác yêu cầu phải đăng nhập
-                       //.anyRequest().authenticated()
+                     //  .anyRequest().authenticated()
                         .anyRequest().permitAll()
 
                 );

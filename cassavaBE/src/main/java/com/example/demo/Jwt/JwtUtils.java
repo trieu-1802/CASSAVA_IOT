@@ -11,10 +11,10 @@ public class JwtUtils {
     private final int jwtExpirationMs = 86400000; // 1 ngày
 
     // Tạo JWT từ username và role
-    public String generateJwtToken(String username, boolean isAdmin) {
+    public String generateJwtToken(String username, boolean admin) {
         return Jwts.builder()
                 .setSubject(username)
-                .claim("isAdmin", isAdmin) // Nhúng quyền vào token
+                .claim("admin", admin) // Nhúng quyền vào token
                 .setIssuedAt(new Date())
                 .setExpiration(new Date((new Date()).getTime() + jwtExpirationMs))
                 .signWith(SignatureAlgorithm.HS512, jwtSecret)
@@ -32,7 +32,7 @@ public class JwtUtils {
                 .setSigningKey(jwtSecret)
                 .parseClaimsJws(token)
                 .getBody()
-                .get("isAdmin", Boolean.class);
+                .get("admin", Boolean.class);
         return isAdmin != null && isAdmin; // Trả về true nếu có và bằng true, ngược lại false
     }
 

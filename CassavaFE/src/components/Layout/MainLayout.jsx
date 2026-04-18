@@ -81,8 +81,8 @@ const MainLayout = () => {
     {
       key: '/weather',
       icon: <CloudOutlined />,
-      label: 'Dữ liệu thời tiết',
-    },
+     label: 'Dữ liệu thời tiết',
+   },
    isAdmin ? {
       key: '/users',
       icon: <AppstoreOutlined />,
