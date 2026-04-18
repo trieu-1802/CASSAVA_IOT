@@ -29,7 +29,7 @@ const FieldDetailIndex = () => {
   }, [id]);
 
   const tabItems = [
-    { key: '1', label: 'Theo dõi tưới tiêu', children: <IrrigationTab /> },
+    { key: '1', label: 'Theo dõi tưới tiêu', children: <IrrigationTab fieldId={id} /> },
    // { key: '2', label: 'Dự đoán sản lượng', children: <SimulationDashboard fieldId={id} /> },
    ...(isAuto === true ? [{
       key: '2',
