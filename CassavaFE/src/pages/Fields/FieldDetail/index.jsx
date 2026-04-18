@@ -10,13 +10,14 @@ import HistoryTab from './HistoryTab';
 import DiseaseTab from './DiseaseTab';
 import SimulationDashboard from '../components/SimulationDashboard';
 import fieldService from '../../../services/fieldService';
-
+import ManualIrrigationTab from './ManualIrrigationTab';
 const { Title } = Typography;
 
 const FieldDetailIndex = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const [fieldName, setFieldName] = useState('');
+  const [isAuto, setIsAuto] = useState(false);
 
   useEffect(() => {
     fieldService.get(`/field/${id}`)
