@@ -12,6 +12,8 @@ public class SensorValue {
     @Id
     private String id;
 
+    private String groupId;
+
     private String fieldId;
 
     private String sensorId; // temperature, humidity, rain...
@@ -29,8 +31,25 @@ public class SensorValue {
         this.time = time;
     }
 
+    public static SensorValue forGroup(String groupId, String sensorId, double value, Date time) {
+        SensorValue v = new SensorValue();
+        v.groupId = groupId;
+        v.sensorId = sensorId;
+        v.value = value;
+        v.time = time;
+        return v;
+    }
+
     public String getId() {
         return id;
+    }
+
+    public String getGroupId() {
+        return groupId;
+    }
+
+    public void setGroupId(String groupId) {
+        this.groupId = groupId;
     }
 
     public String getFieldId() {

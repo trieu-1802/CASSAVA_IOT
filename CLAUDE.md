@@ -43,20 +43,22 @@ Main app (`Demo1Application`) uses `@EnableCaching` and `@EnableScheduling`. `Fi
 
 ### Backend (`cassavaBE/src/main/java/com/example/demo/`)
 
-- **controller/**: REST endpoints:
-  - `FieldMongoController` (`/mongo/field`) — MongoDB field CRUD + clone
+- **controller/**: REST endpoints. `UserController` lives at the root; the other five are under `controller/mongo/`:
+  - `FieldMongoController` (`/mongo/field`) — MongoDB field CRUD, plus `POST /mongo/field/clone/{id}` (deep-copy) and `POST /mongo/field/resetCrop/{id}` (new growing cycle)
   - `FieldSensorController` (`/mongo/field/{fieldId}/sensor`) — sensor-to-field mapping
   - `SensorValueController` (`/sensor-values`) — sensor history and combined values
   - `IrrigationHistoryController` (`/mongo/irrigation-history`) — irrigation records
   - `SimulationController` (`/simulation`) — run/chart simulation
   - `UserController` (`/api/auth`) — login, register, list users
-- **service/**: Business logic — `FieldMongoService`, `MqttWeatherService` (MQTT subscriber + NASA fallback), `SensorValueService`, `FieldSimulator` (crop simulation + auto irrigation history), `IrrigationHistoryService`, `NasaBackupService`
+- **service/**: Split between the root and a `Mongo/` subpackage.
+  - `service/`: `JwtService`, `MqttWeatherService` (MQTT subscriber + NASA fallback), `NasaBackupService`, `UserService`
+  - `service/Mongo/`: `FieldMongoService`, `FieldSimulator` (crop simulation + auto irrigation history), `FieldSensorService`, `SensorValueService`, `IrrigationHistoryService`, plus the `WeatherProvider` interface and its `MongoWeatherProvider` implementation
 - **entity/**: Two separate `Field` classes (see disambiguation below), plus `User`, `FieldSensor`, `SensorValue`, `FieldSimulationResult`, `IrrigationHistory`, `Disease`; some leftover Firebase-era DTOs/entities still live in `entity/` (e.g. `FieldDTO`, `CustomizedParameters`, `Humidity`, `MeasuredData`, `WeatherRequest`, `ChartData`, `HistoryIrrigation`) because the simulation model `entity/Field.java` still depends on several of them
 - **repositories/**: Spring Data MongoDB repos — includes `FieldSimulationResultRepository`, `IrrigationHistoryRepository`
 
 **Cascade delete**: `FieldMongoService.delete()` clears `field_sensor`, `sensor_value`, `simulation_result`, and `irrigation_history` rows tied to the field before removing the field document. Any new field-scoped collection must be added here to avoid orphaned data.
 
-**Reset crop**: `FieldMongoController` exposes a reset-crop endpoint that clears simulation/irrigation history and resets crop-cycle fields on the `Field` Mongo document — used when starting a new growing cycle on an existing field.
+**Reset crop**: `POST /mongo/field/resetCrop/{id}` clears simulation/irrigation history and resets crop-cycle fields on the `Field` Mongo document — used when starting a new growing cycle on an existing field.
 - **Jwt/**: `JwtUtils` (token gen/validation), `JwtAuthFilter` (request filter)
 - **config/**: `SecurityConfig` (CORS + auth rules), `WebConfig`
 - **firebase/**: Firebase Realtime Database integration, `CorsConfig` (see CORS note below)
@@ -70,10 +72,11 @@ Auth flow: JWT with 24h expiry (HS512). Roles are ADMIN and USER. Public endpoin
 React 19 + Vite, Ant Design v6, React Router v7, Recharts for charts.
 
 - **pages/**: Grouped by feature — `Auth/` (Login, Register), `Fields/` (FieldList, FieldDetail with 4 tabs: DiseaseTab, IrrigationTab, YieldTab, HistoryTab — plus feature-local `components/FieldModal`, `components/SimulationDashboard`), `Weather/` (WeatherFieldList picker, WeatherDashboard, WeatherDetail), `Users/` (UserList)
-- **services/**: Three separate Axios instances with different base URLs:
-  - `api.js` → `http://localhost:8081` (general API, JWT interceptor)
-  - `authService.js` → `http://localhost:8081/api` (auth endpoints, JWT interceptor)
-  - `fieldService.js` → `http://localhost:8081/mongo` (field/mongo endpoints, JWT interceptor)
+- **services/**: Three Axios instances with different base URLs, plus one empty stub:
+  - `api.js` → `http://localhost:8081` — injects `Authorization: Bearer <token>` from `localStorage.user.accessToken`
+  - `authService.js` → `http://localhost:8081/api` — same `Authorization: Bearer` interceptor
+  - `fieldService.js` → `http://localhost:8081/mongo` — **no interceptor**; works because `/mongo/**` is `permitAll` in `SecurityConfig`
+  - `weatherService.js` — empty stub
 - **components/**: `Layout/MainLayout` only (responsive sidebar — `Drawer` on mobile <768px, collapsible `Sider` on desktop). Feature-specific components live under their `pages/<feature>/components/` folder.
 - **utils/**: `exportExcel.js`, `formatters.js` — **both are empty stubs**
 - **contexts/**: `AuthContext.jsx` exists but is **empty/unused**
@@ -103,7 +106,7 @@ Note: the sensor formerly named `humidity` was renamed to `relativeHumidity` —
 ### Crop Simulation Pipeline
 
 1. `GET /simulation/run?fieldId=X` triggers simulation
-2. `FieldSimulator` fetches combined sensor data via `SensorValueService.getCombinedValues()`, creates a `Field` object (from `entity/Field.java`), loads weather data, runs the model, saves results to MongoDB
+2. `FieldSimulator` fetches combined sensor data via `SensorValueService.getCombinedValues()`, creates a `Field` object (from `entity/Field.java`), loads weather data through the `WeatherProvider` interface (`service/Mongo/WeatherProvider.java`, currently implemented by `MongoWeatherProvider` reading from the `sensor_value` collection), runs the model, and saves results to MongoDB
 3. If `autoIrrigation` is true, automatically generates `IrrigationHistory` records
 4. `GET /simulation/chart?fieldId=X` returns chart data (labels, yield, irrigation, leafArea, labileCarbon)
 5. Results are replaced on each run (`deleteByFieldId` then `saveAll`)

@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Layout, Menu, theme, Typography, Button, Dropdown, Space, Avatar, Drawer } from 'antd';
-import { 
-  AppstoreOutlined, 
-  CloudOutlined, 
+import {
+  AppstoreOutlined,
+  ApartmentOutlined,
+  CloudOutlined,
   LogoutOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
@@ -73,6 +74,11 @@ const MainLayout = () => {
       label: 'Quản lý cánh đồng',
     },
     {
+      key: '/field-groups',
+      icon: <ApartmentOutlined />,
+      label: 'Nhóm cánh đồng',
+    },
+    {
       key: '/weather',
       icon: <CloudOutlined />,
       label: 'Dữ liệu thời tiết',
@@ -82,7 +88,7 @@ const MainLayout = () => {
       icon: <AppstoreOutlined />,
       label: 'Danh sách người dùng',
     } : null
-  
+
   ];
 
   const handleMenuClick = ({ key }) => {

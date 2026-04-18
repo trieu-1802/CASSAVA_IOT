@@ -59,16 +59,20 @@ public class FieldSimulator {
     }
 
     public Map<String, Object> runSimulation(String fieldId) throws IOException {
-        // 1. Lấy dữ liệu từ MongoDB
-        List<String> combinedData = sensorValueService.getCombinedValues(fieldId);
-
-        if (combinedData == null || combinedData.isEmpty()) {
-            throw new RuntimeException("Không có dữ liệu cảm biến cho cánh đồng này");
-        }
-
-        // 2. Khởi tạo Field và nạp cấu hình từ MongoDB
+        // 1. Nạp cấu hình cánh đồng (cần groupId để lấy dữ liệu thời tiết chung)
         com.example.demo.entity.MongoEntity.Field cfg = fieldMongoRepository.findById(fieldId)
                 .orElseThrow(() -> new RuntimeException("Field not found: " + fieldId));
+
+        if (cfg.getGroupId() == null || cfg.getGroupId().trim().isEmpty()) {
+            throw new RuntimeException("Cánh đồng chưa được gán vào nhóm (groupId) nào");
+        }
+
+        // 2. Lấy dữ liệu thời tiết chung của nhóm từ MongoDB
+        List<String> combinedData = sensorValueService.getCombinedValues(cfg.getGroupId());
+
+        if (combinedData == null || combinedData.isEmpty()) {
+            throw new RuntimeException("Không có dữ liệu cảm biến cho nhóm của cánh đồng này");
+        }
 
         Field field = new Field("field simulation");
         field.acreage             = cfg.getAcreage();

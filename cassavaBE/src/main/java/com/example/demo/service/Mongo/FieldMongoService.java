@@ -5,6 +5,7 @@ import com.example.demo.entity.MongoEntity.FieldSimulationResult;
 import com.example.demo.entity.MongoEntity.IrrigationHistory;
 import com.example.demo.entity.MongoEntity.SensorValue;
 import com.example.demo.repositories.UserRepository;
+import com.example.demo.repositories.mongo.FieldGroupRepository;
 import com.example.demo.repositories.mongo.FieldMongoRepository;
 import com.example.demo.repositories.mongo.FieldSimulationResultRepository;
 import com.example.demo.repositories.mongo.IrrigationHistoryRepository;
@@ -22,6 +23,9 @@ public class FieldMongoService {
 
     @Autowired
     private FieldMongoRepository fieldRepository;
+
+    @Autowired
+    private FieldGroupRepository fieldGroupRepository;
 
     @Autowired
     private UserRepository userRepository;
@@ -55,11 +59,17 @@ public class FieldMongoService {
         if (fieldRepository.existsByName(field.getName())) {
             throw new RuntimeException("Tên cánh đồng '" + field.getName() + "' đã tồn tại trong hệ thống");
         }
+        if (field.getGroupId() == null || field.getGroupId().trim().isEmpty()
+                || !fieldGroupRepository.existsById(field.getGroupId())) {
+            throw new RuntimeException("Cánh đồng phải thuộc một nhóm (groupId) hợp lệ");
+        }
 
         validateField(field);
 
         field.setId(null);
-        field.setStartTime(new Date());
+        if (field.getStartTime() == null) {
+            field.setStartTime(new Date());
+        }
 
         Field saved = fieldRepository.save(field);
         fieldSensorService.initDefaultSensors(saved.getId());
