@@ -24,8 +24,17 @@ public class SensorValueController {
         return sensorValueService.getHistory(fieldId, sensorId);
     }
     @GetMapping("/combined")
-    public List<String> getCombinedData(@RequestParam String fieldId) {
+    public List<String> getCombinedData(@RequestParam String groupId) {
         // API này sẽ trả về List các String theo định dạng cậu muốn
-        return sensorValueService.getCombinedValues(fieldId);
+        return sensorValueService.getCombinedValues(groupId);
+    }
+
+    // Per-group history for the 5 shared weather sensors
+    // Ex: GET /sensor-values/group-history?groupId=...&sensorId=temperature
+    @GetMapping("/group-history")
+    public List<SensorValue> getGroupHistory(
+            @RequestParam String groupId,
+            @RequestParam String sensorId) {
+        return sensorValueService.getGroupHistory(groupId, sensorId);
     }
 }

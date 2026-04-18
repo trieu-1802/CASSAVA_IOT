@@ -13,7 +13,8 @@ import {
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
 // 1. Import file cấu hình Axios của cậu (Nhớ trỏ đúng đường dẫn)
-import fieldService from '../../services/fieldService'; 
+import fieldService from '../../services/fieldService';
+import groupService from '../../services/groupService';
 //import { fieldService } from '../../services/fieldService';
 import FieldModal from './components/FieldModal';
 
@@ -32,10 +33,11 @@ const FieldList = () => {
   
   // State mới: Dùng để lưu danh sách từ API
   const [fields, setFields] = useState([]);
-  
+  const [groupNameById, setGroupNameById] = useState({});
+
   // State mới: Hiển thị vòng xoay loading trong lúc đợi API trả dữ liệu
-  const [loading, setLoading] = useState(false); 
-  
+  const [loading, setLoading] = useState(false);
+
   // state clone
   const [cloneModalVisible, setCloneModalVisible] = useState(false);
   const [sourceFieldId, setSourceFieldId] = useState('');
@@ -45,9 +47,14 @@ const FieldList = () => {
   const fetchFields = async () => {
     setLoading(true);
     try {
-      const response = await fieldService.get('/field');
-      // Giả sử API trả về 1 mảng các object. Nếu BE trả về 1 object đơn thì dùng: setFields([response.data]);
-      setFields(response.data); 
+      const [fRes, gRes] = await Promise.all([
+        fieldService.get('/field'),
+        groupService.get(''),
+      ]);
+      setFields(fRes.data || []);
+      const map = {};
+      (gRes.data || []).forEach((g) => { map[g.id] = g.name; });
+      setGroupNameById(map);
     } catch (error) {
       console.error("Lỗi khi tải danh sách cánh đồng:", error);
       message.error("Không thể tải dữ liệu từ máy chủ!");
@@ -124,7 +131,7 @@ const FieldList = () => {
     if (isAdmin) {
       try {
         // TODO: Mở comment dòng dưới khi BE đã có API xóa
-         await fieldService.delete(`/field/${id}`);
+         await fieldService.delete(`/field/delete/${id}`);
         
         // Tạm thời xóa trên giao diện để test
         const newData = fields.filter(item => item.id !== id);
@@ -193,6 +200,12 @@ const FieldList = () => {
       key: 'name',
       render: (text) => <strong>{text}</strong>,
     },
+    {
+      title: 'Nhóm',
+      dataIndex: 'groupId',
+      key: 'groupId',
+      render: (gid) => gid ? <Tag color="geekblue">{groupNameById[gid] || gid}</Tag> : <Tag>—</Tag>,
+    },
   /**   {
       title: 'Diện tích (m²)',
       dataIndex: 'acreage', // Đổi từ area -> acreage
@@ -243,7 +256,7 @@ const FieldList = () => {
           <Button
             type="primary"
             icon={<CloudOutlined />}
-            onClick={() => navigate(`/weather/${record.id}`)}
+            onClick={() => navigate(`/fields/${record.id}/soil-sensor`)}
           >
             Xem cảm biến
           </Button>

@@ -24,4 +24,10 @@ public interface SensorValueRepository extends MongoRepository<SensorValue, Stri
     List<SensorValue> findByFieldIdAndSensorIdOrderByTimeDesc(String fieldId, String sensorId);
 
     void deleteByFieldId(String fieldId);
+
+    List<SensorValue> findByGroupId(String groupId);
+
+    List<SensorValue> findByGroupIdAndSensorIdOrderByTimeDesc(String groupId, String sensorId);
+
+    void deleteByGroupId(String groupId);
 }

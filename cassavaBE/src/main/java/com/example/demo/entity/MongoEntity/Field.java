@@ -50,6 +50,7 @@ public class Field {
     @Id
     private String id;
     private String name;
+    private String groupId;
     private double acreage;
     private double fieldCapacity;
     private double distanceBetweenRow;
@@ -115,6 +116,9 @@ public class Field {
 
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }
+
+    public String getGroupId() { return groupId; }
+    public void setGroupId(String groupId) { this.groupId = groupId; }
 
     public String getIdUser() { return idUser; }
     public void setIdUser(String idUser) { this.idUser = idUser; }

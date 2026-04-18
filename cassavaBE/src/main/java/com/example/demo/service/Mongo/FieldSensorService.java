@@ -10,21 +10,16 @@ import java.util.List;
 @Service
 public class FieldSensorService {
 
-    public static final List<String> DEFAULT_SENSOR_IDS = List.of(
-            "temperature",
-            "relativeHumidity",
+    public static final List<String> FIELD_SENSOR_IDS = List.of(
             "humidity30",
-            "humidity60",
-            "rain",
-            "radiation",
-            "wind"
+            "humidity60"
     );
 
     @Autowired
     private FieldSensorRepository repository;
 
     public void initDefaultSensors(String fieldId) {
-        for (String sensorId : DEFAULT_SENSOR_IDS) {
+        for (String sensorId : FIELD_SENSOR_IDS) {
             if (!repository.existsByFieldIdAndSensorId(fieldId, sensorId)) {
                 repository.save(new FieldSensor(fieldId, sensorId));
             }

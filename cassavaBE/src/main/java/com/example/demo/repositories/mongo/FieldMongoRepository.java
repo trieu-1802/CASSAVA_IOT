@@ -8,5 +8,6 @@ import java.util.List;
 public interface FieldMongoRepository extends MongoRepository<Field, String> {
 
     List<Field> findByIdUser(String idUser);
+    List<Field> findByGroupId(String groupId);
     boolean existsByName(String name);
 }
