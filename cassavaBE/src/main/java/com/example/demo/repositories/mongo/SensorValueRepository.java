@@ -9,6 +9,8 @@ import java.util.List;
 
 public interface SensorValueRepository extends MongoRepository<SensorValue, String> {
 
+    List<SensorValue> findByFieldId(String fieldId);
+
     List<SensorValue> findByFieldIdAndSensorId(String fieldId, String sensorId);
 
     List<SensorValue> findTop1ByFieldIdAndSensorIdOrderByTimeDesc(String fieldId, String sensorId);

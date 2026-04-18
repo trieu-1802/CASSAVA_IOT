@@ -34,11 +34,14 @@ public class FirebaseInitialization {
             throw new IOException("Không tìm thấy file serviceAccountKey.json tại: " + filePath);
         }
 
+        if (!FirebaseApp.getApps().isEmpty()) {
+            System.out.println("📌 [DEBUG] FirebaseApp đã được khởi tạo, bỏ qua init lại.");
+            return FirebaseApp.getInstance();
+        }
+
         System.out.println("📌 [DEBUG] Đang sử dụng file: " + filePath);
         FileInputStream serviceAccount = new FileInputStream(filePath);
 
-        //serviceAccount = new FileInputStream(filePath);
-            //serviceAccount = new FileInputStream("./serviceAccountKey.json");
         FirebaseOptions options = new FirebaseOptions.Builder()
                 .setCredentials(GoogleCredentials.fromStream(serviceAccount))
                 .setDatabaseUrl("https://directionproject-1e798-default-rtdb.firebaseio.com")
