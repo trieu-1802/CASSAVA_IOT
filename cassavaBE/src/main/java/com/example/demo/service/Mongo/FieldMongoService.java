@@ -9,6 +9,7 @@ import com.example.demo.repositories.mongo.FieldGroupRepository;
 import com.example.demo.repositories.mongo.FieldMongoRepository;
 import com.example.demo.repositories.mongo.FieldSimulationResultRepository;
 import com.example.demo.repositories.mongo.IrrigationHistoryRepository;
+import com.example.demo.repositories.mongo.IrrigationScheduleRepository;
 import com.example.demo.repositories.mongo.SensorValueRepository;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -38,6 +39,9 @@ public class FieldMongoService {
 
     @Autowired
     private IrrigationHistoryRepository irrigationHistoryRepository;
+
+    @Autowired
+    private IrrigationScheduleRepository irrigationScheduleRepository;
 
     @Autowired
     private FieldSensorService fieldSensorService;
@@ -109,7 +113,7 @@ public class FieldMongoService {
         List<FieldSimulationResult> clonedSimResults = new ArrayList<>(simResults.size());
         for (FieldSimulationResult r : simResults) {
             clonedSimResults.add(new FieldSimulationResult(
-                    newFieldId, r.getTime(), r.getYield(), r.getIrrigation(),
+                    newFieldId, r.getCropStartTime(), r.getTime(), r.getYield(), r.getIrrigation(),
                     r.getLeafArea(), r.getLabileCarbon()));
         }
         simulationResultRepository.saveAll(clonedSimResults);
@@ -118,7 +122,7 @@ public class FieldMongoService {
         List<IrrigationHistory> clonedHistories = new ArrayList<>(histories.size());
         for (IrrigationHistory h : histories) {
             clonedHistories.add(new IrrigationHistory(
-                    newFieldId, h.getTime(), h.getUserName(), h.getAmount(), h.getDuration()));
+                    newFieldId, h.getCropStartTime(), h.getTime(), h.getUserName(), h.getAmount(), h.getDuration()));
         }
         irrigationHistoryRepository.saveAll(clonedHistories);
 
@@ -205,6 +209,8 @@ public class FieldMongoService {
 
         old.setIrrigating(newData.isIrrigating());
 
+        old.setValveId(newData.getValveId());
+
         return fieldRepository.save(old);
     }
 
@@ -216,6 +222,7 @@ public class FieldMongoService {
         sensorValueRepository.deleteByFieldId(id);
         simulationResultRepository.deleteByFieldId(id);
         irrigationHistoryRepository.deleteByFieldId(id);
+        irrigationScheduleRepository.deleteByFieldId(id);
         fieldRepository.deleteById(id);
     }
 
@@ -224,15 +231,14 @@ public class FieldMongoService {
     // Clears per-crop data (sensor values, simulation results, irrigation history)
     // and resets the Field's per-crop state. Keeps field config and sensor mappings.
     // ========================
-    public Field resetCropCycle(String id) {
+    public Field resetCropCycle(String id, Date startTime) {
         Field field = fieldRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy cánh đồng ID: " + id));
 
-        sensorValueRepository.deleteByFieldId(id);
-        simulationResultRepository.deleteByFieldId(id);
-        irrigationHistoryRepository.deleteByFieldId(id);
-
-        field.setStartTime(new Date());
+        // Giữ nguyên lịch sử của các vụ trước.
+        // Vụ mới được phân biệt bằng startTime mới — simulation_result / irrigation_history
+        // sẽ được tag bởi cropStartTime tại thời điểm ghi.
+        field.setStartTime(startTime != null ? startTime : new Date());
         field.setDAP(1);
         field.setIrrigating(false);
 
