@@ -3,6 +3,8 @@ package com.example.demo.entity.MongoEntity;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 
+import java.util.Date;
+
 @Document(collection = "irrigation_history")
 public class IrrigationHistory {
 
@@ -10,6 +12,7 @@ public class IrrigationHistory {
     private String id;
 
     private String fieldId;
+    private Date cropStartTime;
 
     private String time;
     private String userName;
@@ -23,6 +26,16 @@ public class IrrigationHistory {
     public IrrigationHistory(String fieldId, String time, String userName,
                              Double amount, Double duration) {
         this.fieldId = fieldId;
+        this.time = time;
+        this.userName = userName;
+        this.amount = amount;
+        this.duration = duration;
+    }
+
+    public IrrigationHistory(String fieldId, Date cropStartTime, String time, String userName,
+                             Double amount, Double duration) {
+        this.fieldId = fieldId;
+        this.cropStartTime = cropStartTime;
         this.time = time;
         this.userName = userName;
         this.amount = amount;
@@ -45,6 +58,14 @@ public class IrrigationHistory {
 
     public void setFieldId(String fieldId) {
         this.fieldId = fieldId;
+    }
+
+    public Date getCropStartTime() {
+        return cropStartTime;
+    }
+
+    public void setCropStartTime(Date cropStartTime) {
+        this.cropStartTime = cropStartTime;
     }
 
     public String getTime() {

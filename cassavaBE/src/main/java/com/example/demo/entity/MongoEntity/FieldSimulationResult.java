@@ -12,6 +12,7 @@ public class FieldSimulationResult {
     private String id;
 
     private String fieldId;
+    private Date cropStartTime;
     private Date time;
 
     private double yield;
@@ -19,10 +20,25 @@ public class FieldSimulationResult {
     private double leafArea;
     private double labileCarbon;
 
+    public FieldSimulationResult() {
+    }
+
     public FieldSimulationResult(String fieldId, Date time,
                             double yield, double irrigation,
                             double leafArea, double labileCarbon) {
         this.fieldId = fieldId;
+        this.time = time;
+        this.yield = yield;
+        this.irrigation = irrigation;
+        this.leafArea = leafArea;
+        this.labileCarbon = labileCarbon;
+    }
+
+    public FieldSimulationResult(String fieldId, Date cropStartTime, Date time,
+                            double yield, double irrigation,
+                            double leafArea, double labileCarbon) {
+        this.fieldId = fieldId;
+        this.cropStartTime = cropStartTime;
         this.time = time;
         this.yield = yield;
         this.irrigation = irrigation;
@@ -39,6 +55,10 @@ public class FieldSimulationResult {
 
     public String getFieldId() {
         return fieldId;
+    }
+
+    public Date getCropStartTime() {
+        return cropStartTime;
     }
 
     public Date getTime() {
@@ -70,6 +90,10 @@ public class FieldSimulationResult {
 
     public void setFieldId(String fieldId) {
         this.fieldId = fieldId;
+    }
+
+    public void setCropStartTime(Date cropStartTime) {
+        this.cropStartTime = cropStartTime;
     }
 
     public void setTime(Date time) {

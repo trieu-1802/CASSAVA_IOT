@@ -235,13 +235,30 @@ const FieldModal = ({ open, onCancel, onSubmit, initialData }) => {
 
         <Divider />
 
-        <Form.Item 
-          name="autoIrrigation" 
-          label="Tự động tưới tiêu" 
+        <Form.Item
+          name="autoIrrigation"
+          label="Tự động tưới tiêu"
           valuePropName="checked"
           initialValue={false}
         >
           <Switch checkedChildren="Bật" unCheckedChildren="Tắt" />
+        </Form.Item>
+
+        <Form.Item shouldUpdate={(prev, curr) => prev.autoIrrigation !== curr.autoIrrigation} noStyle>
+          {({ getFieldValue }) =>
+            getFieldValue('autoIrrigation') === false ? (
+              <Form.Item
+                name="valveId"
+                label="Van bơm gán cho cánh đồng (1-4)"
+                rules={[{ required: true, message: 'Vui lòng chọn van bơm!' }]}
+              >
+                <Select
+                  placeholder="Chọn van"
+                  options={[1, 2, 3, 4].map((v) => ({ value: v, label: `Van ${v} (Pump${v})` }))}
+                />
+              </Form.Item>
+            ) : null
+          }
         </Form.Item>
       </Form>
     </Modal>
