@@ -16,6 +16,7 @@ import dayjs from 'dayjs';
 import fieldService from '../../../services/fieldService';
 >>>>>>> Stashed changes
 
+// QUAN TRỌNG: Phải khai báo confirm từ Modal của Ant Design
 const { confirm } = Modal;
 
 const STATUS_COLOR = {
@@ -283,8 +284,6 @@ const ManualIrrigationTab = ({ fieldId, fieldName }) => {
   );
 };
 
-<<<<<<< Updated upstream
+
 export default ManualIrrigationTab;
-=======
-export default ManualIrrigationTab;
->>>>>>> Stashed changes
+

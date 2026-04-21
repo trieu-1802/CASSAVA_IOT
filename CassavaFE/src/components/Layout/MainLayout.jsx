@@ -73,13 +73,6 @@ const MainLayout = () => {
       icon: <AppstoreOutlined />,
       label: 'Quản lý cánh đồng',
     },
-<<<<<<< Updated upstream
-   // {
-   //   key: '/weather',
-   //   icon: <CloudOutlined />,
-   //   label: 'Dữ liệu thời tiết',
-   // },
-=======
     {
       key: '/field-groups',
       icon: <ApartmentOutlined />,
@@ -90,7 +83,6 @@ const MainLayout = () => {
       icon: <CloudOutlined />,
      label: 'Dữ liệu thời tiết',
    },
->>>>>>> Stashed changes
    isAdmin ? {
       key: '/users',
       icon: <AppstoreOutlined />,

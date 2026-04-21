@@ -167,12 +167,12 @@ const WeatherDetail = () => {
       <Button icon={<ArrowLeftOutlined />} onClick={() => navigate(-1)} style={{ marginBottom: 16 }}>
         Quay lại trạm quan trắc
       </Button>
-      {/* Bộ chọn thời gian 
+      {/* Bộ chọn thời gian
         <Space>
           <Text strong>Chọn thời gian:</Text>
-          <RangePicker 
-            value={dateRange} 
-            onChange={(dates) => setDateRange(dates)} 
+          <RangePicker
+            value={dateRange}
+            onChange={(dates) => setDateRange(dates)}
             format="DD/MM/YYYY"
             placeholder={['Từ ngày', 'Đến ngày']}
           />
@@ -196,7 +196,7 @@ const WeatherDetail = () => {
                 <Tooltip labelFormatter={(_, payload) => payload[0]?.payload?.fullTime} />
                 <Legend />
 
-                {/* Thêm Brush để tạo thanh trượt zoom 
+                {/* Thêm Brush để tạo thanh trượt zoom
                 <Brush dataKey="time" height={30} stroke="#13c2c2" />
                 {SOIL_SERIES.map((s) => (
                   <Line
@@ -319,7 +319,7 @@ const formatTime = (iso) => {
     timeZone: 'Asia/Ho_Chi_Minh',
   });
   // Kết quả sẽ có dạng "04:00 22/04"
-  return formatter.format(date).replace(' ', ' '); 
+  return formatter.format(date).replace(' ', ' ');
 };
 const formatFullTime = (iso) => new Date(iso).toLocaleString('vi-VN', {
   timeZone: 'Asia/Ho_Chi_Minh',
@@ -363,7 +363,7 @@ const WeatherDetail = () => {
         ...responses.flatMap((r) => (r.data?.[0] ? [new Date(r.data[0].time).getTime()] : [])),
         0
       );
-      
+
       // Xử lý logic thời gian
       let startCutoff, endCutoff;
       if (dateRange && dateRange[0] && dateRange[1]) {
@@ -380,7 +380,7 @@ const WeatherDetail = () => {
           const t = new Date(item.time).getTime();
           // CHÚ Ý SỬA LỖI Ở ĐÂY: Dùng startCutoff và endCutoff thay vì cutoff
           if (t < startCutoff || t > endCutoff) return;
-          
+
           if (!buckets.has(t)) {
             buckets.set(t, {
               t,
@@ -399,9 +399,9 @@ const WeatherDetail = () => {
       const params = isGroupScope ? { groupId, sensorId } : { fieldId, sensorId };
       const response = await api.get(url, { params });
       if (!response.data || response.data.length === 0) return [];
-      
+
       const latest = new Date(response.data[0].time).getTime();
-      
+
       // Xử lý logic thời gian cho AreaChart
       let startCutoff, endCutoff;
       if (dateRange && dateRange[0] && dateRange[1]) {
@@ -452,15 +452,15 @@ const WeatherDetail = () => {
         {/* Bộ chọn thời gian */}
         <Space>
           <Text strong>Chọn thời gian:</Text>
-          <RangePicker 
-            value={dateRange} 
-            onChange={(dates) => setDateRange(dates)} 
+          <RangePicker
+            value={dateRange}
+            onChange={(dates) => setDateRange(dates)}
             format="DD/MM/YYYY"
             placeholder={['Từ ngày', 'Đến ngày']}
           />
         </Space>
       </Space>
-      
+
       <Card
         title={<Title level={4} style={{ margin: 0 }}>Biểu đồ trực quan: {sensorNameVi}</Title>}
         extra={<Text type="secondary">{dateRange ? 'Dữ liệu tùy chỉnh' : 'Dữ liệu 24h qua'} • {isGroupScope ? 'Nguồn: nhóm (chia sẻ)' : 'Nguồn: cánh đồng'}</Text>}
@@ -481,7 +481,7 @@ const WeatherDetail = () => {
 
                 {/* Thêm Brush để tạo thanh trượt zoom */}
                 <Brush dataKey="time" height={30} stroke="#13c2c2" />
-                
+
                 {SOIL_SERIES.map((s) => (
                   <Line
                     key={s.id}
@@ -515,7 +515,7 @@ const WeatherDetail = () => {
                   formatter={(value) => [`${value}`, 'Giá trị']}
                   labelFormatter={(_, payload) => payload[0]?.payload?.fullTime}
                 />
-                
+
                 {/* Thêm Brush để tạo thanh trượt zoom cho AreaChart */}
                 <Brush dataKey="time" height={30} stroke={getChartColor(sensorId)} />
 
