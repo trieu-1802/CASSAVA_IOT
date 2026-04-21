@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
-import { Table, Button, Space, Typography, Popconfirm, message, Card, Tag, Modal, Input } from 'antd';
+import { Table, Button, Space, Typography, Popconfirm, message, Card, Tag, Modal, Input, DatePicker } from 'antd';
+import dayjs from 'dayjs';
 import { 
   PlusOutlined, 
   EditOutlined, 
@@ -13,7 +14,8 @@ import {
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
 // 1. Import file cấu hình Axios của cậu (Nhớ trỏ đúng đường dẫn)
-import fieldService from '../../services/fieldService'; 
+import fieldService from '../../services/fieldService';
+import groupService from '../../services/groupService';
 //import { fieldService } from '../../services/fieldService';
 import FieldModal from './components/FieldModal';
 
@@ -32,22 +34,33 @@ const FieldList = () => {
   
   // State mới: Dùng để lưu danh sách từ API
   const [fields, setFields] = useState([]);
-  
+  const [groupNameById, setGroupNameById] = useState({});
+
   // State mới: Hiển thị vòng xoay loading trong lúc đợi API trả dữ liệu
-  const [loading, setLoading] = useState(false); 
-  
+  const [loading, setLoading] = useState(false);
+
   // state clone
   const [cloneModalVisible, setCloneModalVisible] = useState(false);
   const [sourceFieldId, setSourceFieldId] = useState('');
   const [newFieldId, setNewFieldId] = useState('');
 
+  // state reset crop
+  const [resetCropModalVisible, setResetCropModalVisible] = useState(false);
+  const [resetCropField, setResetCropField] = useState(null);
+  const [resetCropStartTime, setResetCropStartTime] = useState(dayjs());
+
   // --- GỌI API LẤY DỮ LIỆU (USE EFFECT) ---
   const fetchFields = async () => {
     setLoading(true);
     try {
-      const response = await fieldService.get('/field');
-      // Giả sử API trả về 1 mảng các object. Nếu BE trả về 1 object đơn thì dùng: setFields([response.data]);
-      setFields(response.data); 
+      const [fRes, gRes] = await Promise.all([
+        fieldService.get('/field'),
+        groupService.get(''),
+      ]);
+      setFields(fRes.data || []);
+      const map = {};
+      (gRes.data || []).forEach((g) => { map[g.id] = g.name; });
+      setGroupNameById(map);
     } catch (error) {
       console.error("Lỗi khi tải danh sách cánh đồng:", error);
       message.error("Không thể tải dữ liệu từ máy chủ!");
@@ -138,14 +151,28 @@ const FieldList = () => {
     }
   };
 
-  const handleResetCrop = async (id) => {
+  const openResetCropModal = (record) => {
     if (!isAdmin) {
       return message.error('Lỗi: Bạn không có quyền thực hiện hành động này!');
     }
+    setResetCropField(record);
+    setResetCropStartTime(dayjs());
+    setResetCropModalVisible(true);
+  };
+
+  const confirmResetCrop = async () => {
+    if (!resetCropField) return;
+    if (!resetCropStartTime) {
+      return message.error('Vui lòng chọn ngày bắt đầu vụ mới!');
+    }
     setLoading(true);
     try {
-      await fieldService.post(`/field/resetCrop/${id}`);
+      await fieldService.post(`/field/resetCrop/${resetCropField.id}`, {
+        startTime: resetCropStartTime.toDate().toISOString(),
+      });
       message.success('Đã bắt đầu vụ mùa mới cho cánh đồng!');
+      setResetCropModalVisible(false);
+      setResetCropField(null);
       fetchFields();
     } catch (error) {
       console.error('Reset crop error:', error);
@@ -192,6 +219,12 @@ const FieldList = () => {
       dataIndex: 'name',
       key: 'name',
       render: (text) => <strong>{text}</strong>,
+    },
+    {
+      title: 'Nhóm',
+      dataIndex: 'groupId',
+      key: 'groupId',
+      render: (gid) => gid ? <Tag color="geekblue">{groupNameById[gid] || gid}</Tag> : <Tag>—</Tag>,
     },
   /**   {
       title: 'Diện tích (m²)',
@@ -243,7 +276,7 @@ const FieldList = () => {
           <Button
             type="primary"
             icon={<CloudOutlined />}
-            onClick={() => navigate(`/weather/${record.id}`)}
+            onClick={() => navigate(`/fields/${record.id}/soil-sensor`)}
           >
             Xem cảm biến
           </Button>
@@ -258,28 +291,14 @@ const FieldList = () => {
             </Button>
           )}
           {isAdmin && (
-            <Popconfirm
+            <Button
+              icon={<ReloadOutlined />}
+              style={{ color: '#52c41a', borderColor: '#52c41a' }}
               title="Bắt đầu vụ mùa mới"
-              description={
-                <div style={{ maxWidth: 280 }}>
-                  Hành động này sẽ <strong>xóa toàn bộ</strong> dữ liệu cảm biến,
-                  kết quả mô phỏng và lịch sử tưới của cánh đồng "{record.name}",
-                  đồng thời đặt lại thời gian bắt đầu vụ. Bạn có chắc chắn?
-                </div>
-              }
-              onConfirm={() => handleResetCrop(record.id)}
-              okText="Có, bắt đầu vụ mới"
-              cancelText="Hủy"
-              okButtonProps={{ danger: true }}
+              onClick={() => openResetCropModal(record)}
             >
-              <Button
-                icon={<ReloadOutlined />}
-                style={{ color: '#52c41a', borderColor: '#52c41a' }}
-                title="Bắt đầu vụ mùa mới"
-              >
-                Mùa mới
-              </Button>
-            </Popconfirm>
+              Mùa mới
+            </Button>
           )}
           {isAdmin && (
             <Popconfirm
@@ -346,12 +365,40 @@ const FieldList = () => {
           onPressEnter={confirmClone} // Nhấn Enter để submit luôn cho tiện
         />
       </Modal>
-      <FieldModal 
-        open={isModalOpen} 
-        onCancel={() => setIsModalOpen(false)} 
+      <FieldModal
+        open={isModalOpen}
+        onCancel={() => setIsModalOpen(false)}
         onSubmit={handleModalSubmit}
         initialData={editingField}
       />
+
+      {/* MODAL BẮT ĐẦU VỤ MÙA MỚI */}
+      <Modal
+        title="Bắt đầu vụ mùa mới"
+        open={resetCropModalVisible}
+        onOk={confirmResetCrop}
+        onCancel={() => setResetCropModalVisible(false)}
+        okText="Có, bắt đầu vụ mới"
+        cancelText="Hủy"
+        okButtonProps={{ danger: true, loading }}
+      >
+        <p style={{ marginTop: 0 }}>
+          Hành động này sẽ <strong>xóa toàn bộ</strong> dữ liệu cảm biến,
+          kết quả mô phỏng và lịch sử tưới của cánh đồng
+          {resetCropField ? ` "${resetCropField.name}"` : ''}.
+        </p>
+        <p style={{ marginBottom: 8 }}>Ngày bắt đầu vụ mới:</p>
+        <DatePicker
+          style={{ width: '100%' }}
+          format="DD/MM/YYYY"
+          value={resetCropStartTime}
+          onChange={(d) => setResetCropStartTime(d)}
+          placeholder="Chọn ngày bắt đầu"
+        />
+        <p style={{ marginTop: 8, color: '#999', fontSize: 12 }}>
+          Có thể chọn ngày trong quá khứ để mô phỏng lại vụ đã qua.
+        </p>
+      </Modal>
     </div>
   );
 };

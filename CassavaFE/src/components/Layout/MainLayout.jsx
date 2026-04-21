@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Layout, Menu, theme, Typography, Button, Dropdown, Space, Avatar, Drawer } from 'antd';
-import { 
-  AppstoreOutlined, 
-  CloudOutlined, 
+import {
+  AppstoreOutlined,
+  ApartmentOutlined,
+  CloudOutlined,
   LogoutOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
@@ -72,17 +73,30 @@ const MainLayout = () => {
       icon: <AppstoreOutlined />,
       label: 'Quản lý cánh đồng',
     },
+<<<<<<< Updated upstream
    // {
    //   key: '/weather',
    //   icon: <CloudOutlined />,
    //   label: 'Dữ liệu thời tiết',
    // },
+=======
+    {
+      key: '/field-groups',
+      icon: <ApartmentOutlined />,
+      label: 'Nhóm cánh đồng',
+    },
+    {
+      key: '/weather',
+      icon: <CloudOutlined />,
+     label: 'Dữ liệu thời tiết',
+   },
+>>>>>>> Stashed changes
    isAdmin ? {
       key: '/users',
       icon: <AppstoreOutlined />,
       label: 'Danh sách người dùng',
     } : null
-  
+
   ];
 
   const handleMenuClick = ({ key }) => {

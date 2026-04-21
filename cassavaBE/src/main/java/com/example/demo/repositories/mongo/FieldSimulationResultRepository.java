@@ -1,5 +1,6 @@
 package com.example.demo.repositories.mongo;
 
+import java.util.Date;
 import java.util.List;
 
 import org.springframework.data.mongodb.repository.MongoRepository;
@@ -11,5 +12,9 @@ public interface FieldSimulationResultRepository extends MongoRepository<FieldSi
 
     List<FieldSimulationResult> findByFieldIdOrderByTimeAsc(String fieldId);
 
+    List<FieldSimulationResult> findByFieldIdAndCropStartTimeOrderByTimeAsc(String fieldId, Date cropStartTime);
+
     void deleteByFieldId(String fieldId);
+
+    void deleteByFieldIdAndCropStartTime(String fieldId, Date cropStartTime);
 }

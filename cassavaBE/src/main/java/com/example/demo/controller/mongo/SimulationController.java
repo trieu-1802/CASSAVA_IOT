@@ -1,17 +1,15 @@
 package com.example.demo.controller.mongo;
 
-import com.example.demo.entity.Field;
+import com.example.demo.entity.MongoEntity.Field;
 import com.example.demo.entity.MongoEntity.FieldSimulationResult;
 import com.example.demo.repositories.mongo.FieldMongoRepository;
 import com.example.demo.repositories.mongo.FieldSimulationResultRepository;
 import com.example.demo.service.Mongo.FieldSimulator;
 
-import com.example.demo.service.Mongo.SensorValueService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -26,6 +24,9 @@ public class SimulationController {
 
    @Autowired
    private FieldSimulationResultRepository simulationResultRepository;
+
+   @Autowired
+   private FieldMongoRepository fieldMongoRepository;
 
     // API: GET http://localhost:8081/simulation/run?fieldId=fieldTest
     @GetMapping("/run")
@@ -43,8 +44,16 @@ public class SimulationController {
     @GetMapping("/chart")
     public ResponseEntity<?> getChart(@RequestParam String fieldId) {
 
-        List<FieldSimulationResult> data =
-                simulationResultRepository.findByFieldIdOrderByTimeAsc(fieldId);
+        Field field = fieldMongoRepository.findById(fieldId).orElse(null);
+
+        List<FieldSimulationResult> data;
+        if (field != null && field.getStartTime() != null) {
+            // Chỉ lấy kết quả của vụ hiện tại
+            data = simulationResultRepository
+                    .findByFieldIdAndCropStartTimeOrderByTimeAsc(fieldId, field.getStartTime());
+        } else {
+            data = simulationResultRepository.findByFieldIdOrderByTimeAsc(fieldId);
+        }
 
         List<Double> labels = new ArrayList<>();
         List<Double> yield = new ArrayList<>();

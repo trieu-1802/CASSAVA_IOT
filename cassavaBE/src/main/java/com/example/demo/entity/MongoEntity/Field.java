@@ -50,6 +50,7 @@ public class Field {
     @Id
     private String id;
     private String name;
+    private String groupId;
     private double acreage;
     private double fieldCapacity;
     private double distanceBetweenRow;
@@ -58,6 +59,7 @@ public class Field {
     private boolean autoIrrigation;
     private int numberOfHoles;
     private double fertilizationLevel;
+    private Integer valveId;
 
     // Các biến bạn muốn để mặc định (không truyền từ JSON)
     private String idUser = "69ccc364a1e7905cc9356ce3"; // Default ID
@@ -116,6 +118,9 @@ public class Field {
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }
 
+    public String getGroupId() { return groupId; }
+    public void setGroupId(String groupId) { this.groupId = groupId; }
+
     public String getIdUser() { return idUser; }
     public void setIdUser(String idUser) { this.idUser = idUser; }
 
@@ -157,4 +162,7 @@ public class Field {
 
     public boolean isIrrigating() { return isIrrigating; }
     public void setIrrigating(boolean irrigating) { isIrrigating = irrigating; }
+
+    public Integer getValveId() { return valveId; }
+    public void setValveId(Integer valveId) { this.valveId = valveId; }
 }

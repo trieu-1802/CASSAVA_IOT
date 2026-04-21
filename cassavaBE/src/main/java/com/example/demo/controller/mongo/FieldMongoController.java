@@ -8,6 +8,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Date;
 import java.util.List;
 import java.util.Map;
 
@@ -72,9 +73,15 @@ public class FieldMongoController {
     // RESET CROP CYCLE ("Mùa mới")
     // ========================
     @PostMapping("/resetCrop/{id}")
-    public ResponseEntity<?> resetCrop(@PathVariable String id) {
+    public ResponseEntity<?> resetCrop(
+            @PathVariable String id,
+            @RequestBody(required = false) Map<String, String> body) {
         try {
-            Field updated = fieldService.resetCropCycle(id);
+            Date startTime = null;
+            if (body != null && body.get("startTime") != null && !body.get("startTime").isBlank()) {
+                startTime = Date.from(java.time.Instant.parse(body.get("startTime")));
+            }
+            Field updated = fieldService.resetCropCycle(id, startTime);
             return ResponseEntity.ok(updated);
         } catch (RuntimeException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(e.getMessage());

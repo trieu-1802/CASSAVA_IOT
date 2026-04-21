@@ -25,14 +25,18 @@ public class SensorValueService {
     public List<SensorValue> getHistory(String fieldId, String sensorId) {
         return repository.findByFieldIdAndSensorIdOrderByTimeDesc(fieldId, sensorId);
     }
+
+    public List<SensorValue> getGroupHistory(String groupId, String sensorId) {
+        return repository.findByGroupIdAndSensorIdOrderByTimeDesc(groupId, sensorId);
+    }
     /**
      * Gom dữ liệu cảm biến theo từng giờ: bucket time xuống đầu giờ, lấy trung bình
      * mỗi loại sensor trong cùng 1 giờ, rồi trả về 1 hàng / 1 giờ. Dùng cho mô hình
      * tính ET0 theo giờ trong Field.java.
      */
-    public List<String> getCombinedValues(String fieldId) {
-        // 1. Lọc theo fieldId
-        MatchOperation matchStage = Aggregation.match(Criteria.where("fieldId").is(fieldId));
+    public List<String> getCombinedValues(String groupId) {
+        // 1. Lọc theo groupId (5 cảm biến thời tiết dùng chung cho cả nhóm)
+        MatchOperation matchStage = Aggregation.match(Criteria.where("groupId").is(groupId));
 
         // 2. Gắn thêm hourTime = time làm tròn xuống đầu giờ (UTC)
         AggregationOperation addHourStage = context -> new Document("$addFields",

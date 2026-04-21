@@ -80,25 +80,56 @@ const FieldModal = ({ open, onCancel, onSubmit, initialData }) => {
 export default FieldModal;
 */
 // src/pages/Fields/components/FieldModal.jsx
-import React, { useEffect } from 'react';
-import { Modal, Form, Input, InputNumber, Switch, Row, Col, Divider } from 'antd';
+import React, { useEffect, useState } from 'react';
+import { Modal, Form, Input, InputNumber, Switch, Row, Col, Divider, Select, DatePicker, message } from 'antd';
+import dayjs from 'dayjs';
+import groupService from '../../../services/groupService';
 
 const FieldModal = ({ open, onCancel, onSubmit, initialData }) => {
   const [form] = Form.useForm();
+  const [groups, setGroups] = useState([]);
+  const [groupsLoading, setGroupsLoading] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    const loadGroups = async () => {
+      setGroupsLoading(true);
+      try {
+        const res = await groupService.get('');
+        if (!cancelled) setGroups(res.data || []);
+      } catch (err) {
+        console.error('Lỗi tải danh sách nhóm:', err);
+        if (!cancelled) message.error('Không thể tải danh sách nhóm cánh đồng!');
+      } finally {
+        if (!cancelled) setGroupsLoading(false);
+      }
+    };
+    loadGroups();
+    return () => { cancelled = true; };
+  }, [open]);
 
   useEffect(() => {
     if (open) {
       if (initialData) {
-        form.setFieldsValue(initialData);
+        form.setFieldsValue({
+          ...initialData,
+          startTime: initialData.startTime ? dayjs(initialData.startTime) : null,
+        });
       } else {
         form.resetFields();
+        form.setFieldsValue({ startTime: dayjs() });
       }
     }
   }, [open, initialData, form]);
 
   const handleOk = () => {
     form.validateFields().then((values) => {
-      onSubmit(values);
+      const payload = {
+        ...values,
+        startTime: values.startTime ? values.startTime.toDate().toISOString() : null,
+      };
+      onSubmit(payload);
       form.resetFields();
     });
   };
@@ -135,6 +166,34 @@ const FieldModal = ({ open, onCancel, onSubmit, initialData }) => {
             </Form.Item>
           </Col>
         </Row>
+
+        <Form.Item
+          name="groupId"
+          label="Nhóm cánh đồng (chia sẻ trạm thời tiết)"
+          rules={[{ required: true, message: 'Vui lòng chọn nhóm cánh đồng!' }]}
+          extra="5 cảm biến thời tiết (nhiệt độ, độ ẩm không khí, mưa, bức xạ, gió) dùng chung cho mọi cánh đồng trong nhóm."
+        >
+          <Select
+            placeholder="Chọn nhóm cánh đồng"
+            loading={groupsLoading}
+            options={groups.map((g) => ({ value: g.id, label: g.name }))}
+            showSearch
+            optionFilterProp="label"
+          />
+        </Form.Item>
+
+        <Form.Item
+          name="startTime"
+          label="Ngày bắt đầu trồng"
+          rules={[{ required: true, message: 'Vui lòng chọn ngày bắt đầu vụ!' }]}
+          extra="Có thể chọn ngày trong quá khứ để mô phỏng lại vụ đã qua."
+        >
+          <DatePicker
+            style={{ width: '100%' }}
+            format="DD/MM/YYYY"
+            placeholder="Chọn ngày bắt đầu"
+          />
+        </Form.Item>
 
         <Divider orientation="left" plain style={{ fontSize: '12px', color: '#999' }}>Thông số canh tác</Divider>
 
@@ -176,13 +235,30 @@ const FieldModal = ({ open, onCancel, onSubmit, initialData }) => {
 
         <Divider />
 
-        <Form.Item 
-          name="autoIrrigation" 
-          label="Tự động tưới tiêu" 
+        <Form.Item
+          name="autoIrrigation"
+          label="Tự động tưới tiêu"
           valuePropName="checked"
           initialValue={false}
         >
           <Switch checkedChildren="Bật" unCheckedChildren="Tắt" />
+        </Form.Item>
+
+        <Form.Item shouldUpdate={(prev, curr) => prev.autoIrrigation !== curr.autoIrrigation} noStyle>
+          {({ getFieldValue }) =>
+            getFieldValue('autoIrrigation') === false ? (
+              <Form.Item
+                name="valveId"
+                label="Van bơm gán cho cánh đồng (1-4)"
+                rules={[{ required: true, message: 'Vui lòng chọn van bơm!' }]}
+              >
+                <Select
+                  placeholder="Chọn van"
+                  options={[1, 2, 3, 4].map((v) => ({ value: v, label: `Van ${v} (Pump${v})` }))}
+                />
+              </Form.Item>
+            ) : null
+          }
         </Form.Item>
       </Form>
     </Modal>

@@ -28,18 +28,18 @@ const FieldDetailIndex = () => {
   }, [id]);
 
   const tabItems = [
-    { key: '1', label: 'Theo dõi tưới tiêu', children: <IrrigationTab /> },
+    { key: '1', label: 'Theo dõi tưới tiêu', children: <IrrigationTab fieldId={id} /> },
    // { key: '2', label: 'Dự đoán sản lượng', children: <SimulationDashboard fieldId={id} /> },
    ...(isAuto === true ? [{
       key: '2',
       label: 'Dự đoán sản lượng',
-      children: <SimulationDashboard fieldId={id} />
+      children: <SimulationDashboard fieldId={id} fieldName={fieldName} />
     }] : []),
     // Nếu isAuto là false -> Hiện Cài đặt tưới tay
     ...(isAuto === false ? [{
       key: '2-manual',
       label: 'Cài đặt tưới tay',
-      children: <ManualIrrigationTab fieldId={id} />
+      children: <ManualIrrigationTab fieldId={id} fieldName={fieldName} />
     }] : []),
     { key: '3', label: 'Lịch sử tưới', children: <HistoryTab fieldId={id} />},
     { key: '4', label: 'Tình trạng bệnh', children: <DiseaseTab /> },

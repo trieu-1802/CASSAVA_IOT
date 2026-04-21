@@ -59,18 +59,22 @@ public class FieldSimulator {
     }
 
     public Map<String, Object> runSimulation(String fieldId) throws IOException {
-        // 1. Lấy dữ liệu từ MongoDB
-        List<String> combinedData = sensorValueService.getCombinedValues(fieldId);
-
-        if (combinedData == null || combinedData.isEmpty()) {
-            throw new RuntimeException("Không có dữ liệu cảm biến cho cánh đồng này");
-        }
-
-        // 2. Khởi tạo Field và nạp cấu hình từ MongoDB
+        // 1. Nạp cấu hình cánh đồng (cần groupId để lấy dữ liệu thời tiết chung)
         com.example.demo.entity.MongoEntity.Field cfg = fieldMongoRepository.findById(fieldId)
                 .orElseThrow(() -> new RuntimeException("Field not found: " + fieldId));
 
-        Field field = new Field("field simulation");
+        if (cfg.getGroupId() == null || cfg.getGroupId().trim().isEmpty()) {
+            throw new RuntimeException("Cánh đồng chưa được gán vào nhóm (groupId) nào");
+        }
+
+        // 2. Lấy dữ liệu thời tiết chung của nhóm từ MongoDB
+        List<String> combinedData = sensorValueService.getCombinedValues(cfg.getGroupId());
+
+        if (combinedData == null || combinedData.isEmpty()) {
+            throw new RuntimeException("Không có dữ liệu cảm biến cho nhóm của cánh đồng này");
+        }
+
+        Field field = new Field(cfg.getName());
         field.acreage             = cfg.getAcreage();
         field.fieldCapacity       = cfg.getFieldCapacity();
         field.distanceBetweenRow  = cfg.getDistanceBetweenRow() * 100;  // m → cm
@@ -93,11 +97,14 @@ public class FieldSimulator {
         LocalDate baseDate = LocalDate.parse(firstTimeStr.substring(0, 10));
         int baseDoy = (int) Math.floor(Double.parseDouble(Field._weatherData.get(0).get(1).toString()));
 
+        // Tag mọi row của lần chạy này theo mùa vụ hiện tại của field
+        Date cropStartTime = cfg.getStartTime();
+
         // 6. Lưu kết quả vào MongoDB
-        List<FieldSimulationResult> savedResults = saveResultsToMongo(fieldId, field, baseDate, baseDoy);
+        List<FieldSimulationResult> savedResults = saveResultsToMongo(fieldId, cropStartTime, field, baseDate, baseDoy);
 
         // 7. Lưu lịch sử tưới nếu autoIrrigation
-        List<IrrigationHistory> irrigationRecords = saveIrrigationHistory(fieldId, field, baseDate, baseDoy);
+        List<IrrigationHistory> irrigationRecords = saveIrrigationHistory(fieldId, cropStartTime, field, baseDate, baseDoy);
 
         // 8. Trả về kết quả
         Map<String, Object> result = new HashMap<>();
@@ -110,12 +117,17 @@ public class FieldSimulator {
         return result;
     }
 
-    private List<IrrigationHistory> saveIrrigationHistory(String fieldId, Field field, LocalDate baseDate, int baseDoy) {
+    private List<IrrigationHistory> saveIrrigationHistory(String fieldId, Date cropStartTime, Field field, LocalDate baseDate, int baseDoy) {
         if (!field.autoIrrigation || field.listHistory.isEmpty()) {
             return Collections.emptyList();
         }
 
-        irrigationHistoryRepository.deleteByFieldId(fieldId);
+        // Chỉ xóa lịch sử của vụ hiện tại — các vụ cũ giữ nguyên
+        if (cropStartTime != null) {
+            irrigationHistoryRepository.deleteByFieldIdAndCropStartTime(fieldId, cropStartTime);
+        } else {
+            irrigationHistoryRepository.deleteByFieldId(fieldId);
+        }
 
         List<IrrigationHistory> toSave = new ArrayList<>();
 
@@ -132,7 +144,7 @@ public class FieldSimulator {
 
             String correctedTime = correctedDate + " " + h.getTime().substring(11);
 
-            toSave.add(new IrrigationHistory(fieldId, correctedTime, h.getUserName(), amountM3Ha, duration));
+            toSave.add(new IrrigationHistory(fieldId, cropStartTime, correctedTime, h.getUserName(), amountM3Ha, duration));
         }
 
         if (toSave.isEmpty()) {
@@ -142,14 +154,19 @@ public class FieldSimulator {
         return irrigationHistoryRepository.saveAll(toSave);
     }
 
-    private List<FieldSimulationResult> saveResultsToMongo(String fieldId, Field field, LocalDate baseDate, int baseDoy) {
+    private List<FieldSimulationResult> saveResultsToMongo(String fieldId, Date cropStartTime, Field field, LocalDate baseDate, int baseDoy) {
         List<List<Double>> results = field._results;
 
         if (results == null || results.isEmpty() || results.get(0).isEmpty()) {
             return Collections.emptyList();
         }
 
-        simulationResultRepository.deleteByFieldId(fieldId);
+        // Chỉ xóa kết quả của vụ hiện tại — các vụ cũ giữ nguyên
+        if (cropStartTime != null) {
+            simulationResultRepository.deleteByFieldIdAndCropStartTime(fieldId, cropStartTime);
+        } else {
+            simulationResultRepository.deleteByFieldId(fieldId);
+        }
 
         List<FieldSimulationResult> toSave = new ArrayList<>();
 
@@ -163,7 +180,7 @@ public class FieldSimulator {
             double leafArea = results.get(3).get(i);
             double labileCarbon = results.get(4).get(i);
 
-            toSave.add(new FieldSimulationResult(fieldId, time, yield, irrigation, leafArea, labileCarbon));
+            toSave.add(new FieldSimulationResult(fieldId, cropStartTime, time, yield, irrigation, leafArea, labileCarbon));
         }
 
         return simulationResultRepository.saveAll(toSave);
