@@ -1,8 +1,3 @@
-<<<<<<< Updated upstream
-import React, { useState, useEffect, useRef } from 'react';
-import { Form, InputNumber, Card, Statistic, Row, Col, Divider, Button, Space, Progress, message, Modal } from 'antd';
-import { PlayCircleOutlined, StopOutlined, ClockCircleOutlined, ExclamationCircleOutlined } from '@ant-design/icons';
-=======
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Form, InputNumber, Card, Row, Col, Divider, Button, Space, Tag, Table,
@@ -14,9 +9,7 @@ import {
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import fieldService from '../../../services/fieldService';
->>>>>>> Stashed changes
 
-// QUAN TRỌNG: Phải khai báo confirm từ Modal của Ant Design
 const { confirm } = Modal;
 
 const STATUS_COLOR = {
@@ -187,10 +180,6 @@ const ManualIrrigationTab = ({ fieldId, fieldName }) => {
   return (
     <div style={{ padding: '20px 0' }}>
       <Row gutter={[24, 24]}>
-<<<<<<< Updated upstream
-        {/* Cột cài đặt */}
-=======
->>>>>>> Stashed changes
         <Col xs={24} md={10}>
           <Card title={<span><ClockCircleOutlined /> Đặt lịch tưới</span>}>
             <Form layout="vertical">
@@ -250,10 +239,6 @@ const ManualIrrigationTab = ({ fieldId, fieldName }) => {
           </Card>
         </Col>
 
-<<<<<<< Updated upstream
-        {/* Cột hiển thị trạng thái */}
-=======
->>>>>>> Stashed changes
         <Col xs={24} md={14}>
           <Card
             title="Danh sách lịch tưới"
@@ -284,6 +269,4 @@ const ManualIrrigationTab = ({ fieldId, fieldName }) => {
   );
 };
 
-
 export default ManualIrrigationTab;
-
