@@ -186,7 +186,13 @@ public class FieldMongoService {
             throw new RuntimeException("User not found");
         }
 
+        if (newData.getGroupId() == null || newData.getGroupId().trim().isEmpty()
+                || !fieldGroupRepository.existsById(newData.getGroupId())) {
+            throw new RuntimeException("Cánh đồng phải thuộc một nhóm (groupId) hợp lệ");
+        }
+
         old.setIdUser(newData.getIdUser());
+        old.setGroupId(newData.getGroupId());
         old.setName(newData.getName());
         old.setAcreage(newData.getAcreage());
         old.setAutoIrrigation(newData.isAutoIrrigation());
