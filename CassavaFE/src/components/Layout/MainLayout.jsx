@@ -11,6 +11,7 @@ import {
   DownOutlined  // Thêm icon này
 } from '@ant-design/icons';
 import { useNavigate, Outlet, useLocation } from 'react-router-dom';
+import logoUet from '../../assets/images/logo-uet.png';
 
 const { Header, Sider, Content } = Layout;
 const { Title } = Typography;
@@ -103,27 +104,41 @@ const MainLayout = () => {
   const siderContent = (
     <>
       <div style={{
-        height: 64,
+        height: 88,
         display: 'flex',
         alignItems: 'center',
-        justifyContent: 'center',
-        padding: collapsed && !isMobile ? '0' : '0 16px',
-        transition: 'all 0.2s'
+        justifyContent: collapsed && !isMobile ? 'center' : 'flex-start',
+        padding: collapsed && !isMobile ? '0' : '0 14px',
+        borderBottom: '1px solid rgba(255,255,255,0.08)',
+        transition: 'all 0.2s',
+        overflow: 'hidden'
       }}>
         <img
-          src="/src/assets/images/logo-uet.png"
+          src={logoUet}
           alt="logo"
           style={{
-            width: 32,
-            height: 32,
-            marginRight: collapsed && !isMobile ? 0 : 12,
+            width: collapsed && !isMobile ? 52 : 60,
+            height: collapsed && !isMobile ? 52 : 60,
+            marginRight: collapsed && !isMobile ? 0 : 10,
+            objectFit: 'cover',
+            clipPath: 'circle(50%)',
+            flexShrink: 0,
             transition: 'all 0.2s'
           }}
         />
         {(!collapsed || isMobile) && (
-          <Title level={4} style={{ color: 'white', margin: 0, whiteSpace: 'nowrap' }}>
+          <span
+            style={{
+              color: 'white',
+              fontSize: 17,
+              fontWeight: 600,
+              letterSpacing: 0.3,
+              whiteSpace: 'nowrap',
+              lineHeight: 1.2,
+            }}
+          >
             SMART FARMING
-          </Title>
+          </span>
         )}
       </div>
       <Menu
@@ -159,12 +174,12 @@ const MainLayout = () => {
       )}
 
       <Layout>
-        <Header style={{ padding: 0, background: colorBgContainer, display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingRight: 16 }}>
+        <Header style={{ height: 88, lineHeight: '88px', padding: 0, background: colorBgContainer, display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingRight: 16, boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
           <Button
             type="text"
             icon={isMobile || collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
             onClick={() => isMobile ? setDrawerOpen(true) : setCollapsed(!collapsed)}
-            style={{ fontSize: '16px', width: 64, height: 64 }}
+            style={{ fontSize: '18px', width: 64, height: 88 }}
           />
 
           <Dropdown menu={{ items: userMenuItems }} trigger={['click']}>
