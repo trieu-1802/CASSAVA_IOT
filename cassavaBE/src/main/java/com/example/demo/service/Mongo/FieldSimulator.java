@@ -67,11 +67,18 @@ public class FieldSimulator {
             throw new RuntimeException("Cánh đồng chưa được gán vào nhóm (groupId) nào");
         }
 
-        // 2. Lấy dữ liệu thời tiết chung của nhóm từ MongoDB
-        List<String> combinedData = sensorValueService.getCombinedValues(cfg.getGroupId());
+        // 2. Lấy dữ liệu thời tiết chung của nhóm từ MongoDB, giới hạn theo [startTime, endTime]
+        // endTime null = vụ đang chạy → dùng now()
+        Date rangeStart = cfg.getStartTime();
+        Date rangeEnd = cfg.getEndTime() != null ? cfg.getEndTime() : new Date();
+        if (rangeStart != null && rangeEnd.before(rangeStart)) {
+            throw new RuntimeException("Ngày kết thúc vụ không được trước ngày bắt đầu");
+        }
+        List<String> combinedData = sensorValueService.getCombinedValues(cfg.getGroupId(), rangeStart, rangeEnd);
 
         if (combinedData == null || combinedData.isEmpty()) {
-            throw new RuntimeException("Không có dữ liệu cảm biến cho nhóm của cánh đồng này");
+            throw new RuntimeException("Không có dữ liệu cảm biến cho nhóm trong khoảng vụ ["
+                    + rangeStart + " → " + rangeEnd + "]");
         }
 
         Field field = new Field(cfg.getName());
@@ -92,13 +99,21 @@ public class FieldSimulator {
         // 4. Chạy mô phỏng
         field.runModel();
 
-        // 5. Anchor: first weather data entry's date and DOY
-        String firstTimeStr = Field._weatherData.get(0).get(0).toString(); // "yyyy-MM-dd HH:mm:ss"
-        LocalDate baseDate = LocalDate.parse(firstTimeStr.substring(0, 10));
-        int baseDoy = (int) Math.floor(Double.parseDouble(Field._weatherData.get(0).get(1).toString()));
-
-        // Tag mọi row của lần chạy này theo mùa vụ hiện tại của field
+        // 5. Anchor theo startTime của vụ — không còn phụ thuộc vào row weather đầu tiên.
+        // Nếu startTime null (data cũ) thì fallback về row weather đầu tiên cho tương thích ngược.
+        // Lưu ý: Field.getDoy() trả về DOY 0-based (Jan 1 = 0), còn LocalDate.getDayOfYear()
+        // trả về 1-based (Jan 1 = 1) → phải -1 để khớp với _results[8] (lưu `t` từ getDoy).
         Date cropStartTime = cfg.getStartTime();
+        LocalDate baseDate;
+        int baseDoy;
+        if (cropStartTime != null) {
+            baseDate = cropStartTime.toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
+            baseDoy = baseDate.getDayOfYear() - 1;
+        } else {
+            String firstTimeStr = Field._weatherData.get(0).get(0).toString();
+            baseDate = LocalDate.parse(firstTimeStr.substring(0, 10));
+            baseDoy = (int) Math.floor(Double.parseDouble(Field._weatherData.get(0).get(1).toString()));
+        }
 
         // 6. Lưu kết quả vào MongoDB
         List<FieldSimulationResult> savedResults = saveResultsToMongo(fieldId, cropStartTime, field, baseDate, baseDoy);

@@ -35,8 +35,25 @@ public class SensorValueService {
      * tính ET0 theo giờ trong Field.java.
      */
     public List<String> getCombinedValues(String groupId) {
-        // 1. Lọc theo groupId (5 cảm biến thời tiết dùng chung cho cả nhóm)
-        MatchOperation matchStage = Aggregation.match(Criteria.where("groupId").is(groupId));
+        return getCombinedValues(groupId, null, null);
+    }
+
+    /**
+     * Overload có lọc theo khoảng thời gian vụ mùa.
+     * start/end null = không giới hạn đầu/cuối tương ứng.
+     * Dùng cho mô phỏng vụ trong quá khứ.
+     */
+    public List<String> getCombinedValues(String groupId, java.util.Date start, java.util.Date end) {
+        // 1. Lọc theo groupId + (tùy chọn) khoảng thời gian
+        Criteria criteria = Criteria.where("groupId").is(groupId);
+        if (start != null && end != null) {
+            criteria = criteria.and("time").gte(start).lte(end);
+        } else if (start != null) {
+            criteria = criteria.and("time").gte(start);
+        } else if (end != null) {
+            criteria = criteria.and("time").lte(end);
+        }
+        MatchOperation matchStage = Aggregation.match(criteria);
 
         // 2. Gắn thêm hourTime = time làm tròn xuống đầu giờ (UTC)
         AggregationOperation addHourStage = context -> new Document("$addFields",

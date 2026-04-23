@@ -45,6 +45,7 @@ public class UserService {
                         // 3. Tạo Token THẬT chứa quyền admin (true/false)
                         String jwtToken = jwtUtils.generateJwtToken(user.getUsername(), user.isAdmin());
                         response.put("success", true);
+                        response.put("id", user.getId());
                         response.put("username", user.getUsername());
                         // Tạm thời trả về username làm token nếu bạn chưa cài JWT
                         response.put("accessToken", jwtToken); // Đã thay fake token bằng thật

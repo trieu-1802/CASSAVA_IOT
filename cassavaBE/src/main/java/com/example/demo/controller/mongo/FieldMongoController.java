@@ -78,11 +78,21 @@ public class FieldMongoController {
             @RequestBody(required = false) Map<String, String> body) {
         try {
             Date startTime = null;
-            if (body != null && body.get("startTime") != null && !body.get("startTime").isBlank()) {
-                startTime = Date.from(java.time.Instant.parse(body.get("startTime")));
+            Date endTime = null;
+            if (body != null) {
+                String s = body.get("startTime");
+                if (s != null && !s.isBlank()) {
+                    startTime = Date.from(java.time.Instant.parse(s));
+                }
+                String e = body.get("endTime");
+                if (e != null && !e.isBlank()) {
+                    endTime = Date.from(java.time.Instant.parse(e));
+                }
             }
-            Field updated = fieldService.resetCropCycle(id, startTime);
+            Field updated = fieldService.resetCropCycle(id, startTime, endTime);
             return ResponseEntity.ok(updated);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
         } catch (RuntimeException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(e.getMessage());
         } catch (Exception e) {

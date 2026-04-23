@@ -206,6 +206,7 @@ public class FieldMongoService {
         old.setDAP(newData.getDAP());
 
         old.setStartTime(newData.getStartTime());
+        old.setEndTime(newData.getEndTime());
 
         old.setIrrigating(newData.isIrrigating());
 
@@ -231,14 +232,19 @@ public class FieldMongoService {
     // Clears per-crop data (sensor values, simulation results, irrigation history)
     // and resets the Field's per-crop state. Keeps field config and sensor mappings.
     // ========================
-    public Field resetCropCycle(String id, Date startTime) {
+    public Field resetCropCycle(String id, Date startTime, Date endTime) {
         Field field = fieldRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy cánh đồng ID: " + id));
+
+        if (startTime != null && endTime != null && endTime.before(startTime)) {
+            throw new IllegalArgumentException("Ngày kết thúc vụ không được trước ngày bắt đầu");
+        }
 
         // Giữ nguyên lịch sử của các vụ trước.
         // Vụ mới được phân biệt bằng startTime mới — simulation_result / irrigation_history
         // sẽ được tag bởi cropStartTime tại thời điểm ghi.
         field.setStartTime(startTime != null ? startTime : new Date());
+        field.setEndTime(endTime); // null = vụ đang chạy
         field.setDAP(1);
         field.setIrrigating(false);
 

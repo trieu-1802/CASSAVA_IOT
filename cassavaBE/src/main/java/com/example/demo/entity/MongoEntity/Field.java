@@ -66,6 +66,7 @@ public class Field {
     private int irrigationDuration = 2;
     private double scaleRain = 100;
     private Date startTime = new Date();
+    private Date endTime; // null = vụ đang chạy → mô phỏng tới now()
     private int dAP = 1;// DEFAULT START = 1
     private boolean isIrrigating = false;
     /**
@@ -159,6 +160,9 @@ public class Field {
 
     public Date getStartTime() { return startTime; }
     public void setStartTime(Date startTime) { this.startTime = startTime; }
+
+    public Date getEndTime() { return endTime; }
+    public void setEndTime(Date endTime) { this.endTime = endTime; }
 
     public boolean isIrrigating() { return isIrrigating; }
     public void setIrrigating(boolean irrigating) { isIrrigating = irrigating; }

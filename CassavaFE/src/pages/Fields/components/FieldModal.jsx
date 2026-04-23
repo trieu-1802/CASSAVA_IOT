@@ -115,10 +115,11 @@ const FieldModal = ({ open, onCancel, onSubmit, initialData }) => {
         form.setFieldsValue({
           ...initialData,
           startTime: initialData.startTime ? dayjs(initialData.startTime) : null,
+          endTime: initialData.endTime ? dayjs(initialData.endTime) : null,
         });
       } else {
         form.resetFields();
-        form.setFieldsValue({ startTime: dayjs() });
+        form.setFieldsValue({ startTime: dayjs(), endTime: null });
       }
     }
   }, [open, initialData, form]);
@@ -128,6 +129,7 @@ const FieldModal = ({ open, onCancel, onSubmit, initialData }) => {
       const payload = {
         ...values,
         startTime: values.startTime ? values.startTime.toDate().toISOString() : null,
+        endTime: values.endTime ? values.endTime.toDate().toISOString() : null,
       };
       onSubmit(payload);
       form.resetFields();
@@ -182,18 +184,48 @@ const FieldModal = ({ open, onCancel, onSubmit, initialData }) => {
           />
         </Form.Item>
 
-        <Form.Item
-          name="startTime"
-          label="Ngày bắt đầu trồng"
-          rules={[{ required: true, message: 'Vui lòng chọn ngày bắt đầu vụ!' }]}
-          extra="Có thể chọn ngày trong quá khứ để mô phỏng lại vụ đã qua."
-        >
-          <DatePicker
-            style={{ width: '100%' }}
-            format="DD/MM/YYYY"
-            placeholder="Chọn ngày bắt đầu"
-          />
-        </Form.Item>
+        <Row gutter={16}>
+          <Col xs={24} sm={12}>
+            <Form.Item
+              name="startTime"
+              label="Ngày bắt đầu vụ"
+              rules={[{ required: true, message: 'Vui lòng chọn ngày bắt đầu vụ!' }]}
+              extra="Có thể chọn ngày trong quá khứ."
+            >
+              <DatePicker
+                style={{ width: '100%' }}
+                format="DD/MM/YYYY"
+                placeholder="Chọn ngày bắt đầu"
+              />
+            </Form.Item>
+          </Col>
+          <Col xs={24} sm={12}>
+            <Form.Item
+              name="endTime"
+              label="Ngày kết thúc vụ"
+              extra="Để trống nếu vụ đang chạy (mô phỏng tới hôm nay)."
+              dependencies={['startTime']}
+              rules={[
+                ({ getFieldValue }) => ({
+                  validator(_, value) {
+                    const start = getFieldValue('startTime');
+                    if (!value || !start) return Promise.resolve();
+                    return value.isAfter(start)
+                      ? Promise.resolve()
+                      : Promise.reject(new Error('Ngày kết thúc phải sau ngày bắt đầu'));
+                  },
+                }),
+              ]}
+            >
+              <DatePicker
+                style={{ width: '100%' }}
+                format="DD/MM/YYYY"
+                placeholder="Trống = vụ đang chạy"
+                allowClear
+              />
+            </Form.Item>
+          </Col>
+        </Row>
 
         <Divider orientation="left" plain style={{ fontSize: '12px', color: '#999' }}>Thông số canh tác</Divider>
 
@@ -244,21 +276,16 @@ const FieldModal = ({ open, onCancel, onSubmit, initialData }) => {
           <Switch checkedChildren="Bật" unCheckedChildren="Tắt" />
         </Form.Item>
 
-        <Form.Item shouldUpdate={(prev, curr) => prev.autoIrrigation !== curr.autoIrrigation} noStyle>
-          {({ getFieldValue }) =>
-            getFieldValue('autoIrrigation') === false ? (
-              <Form.Item
-                name="valveId"
-                label="Van bơm gán cho cánh đồng (1-4)"
-                rules={[{ required: true, message: 'Vui lòng chọn van bơm!' }]}
-              >
-                <Select
-                  placeholder="Chọn van"
-                  options={[1, 2, 3, 4].map((v) => ({ value: v, label: `Van ${v} (Pump${v})` }))}
-                />
-              </Form.Item>
-            ) : null
-          }
+        <Form.Item
+          name="valveId"
+          label="Van bơm gán cho cánh đồng (1-4)"
+          rules={[{ required: true, message: 'Vui lòng chọn van bơm!' }]}
+          extra="Van vật lý điều khiển cánh đồng này; dùng cho cả chế độ tự động và lịch tưới thủ công."
+        >
+          <Select
+            placeholder="Chọn van"
+            options={[1, 2, 3, 4].map((v) => ({ value: v, label: `Van ${v} (Pump${v})` }))}
+          />
         </Form.Item>
       </Form>
     </Modal>
