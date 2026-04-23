@@ -1,6 +1,7 @@
 package com.example.demo.controller.mongo;
 
 import com.example.demo.entity.MongoEntity.Field;
+import com.example.demo.service.Mongo.CropSeasonService;
 import com.example.demo.service.Mongo.FieldMongoService;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,6 +20,9 @@ public class FieldMongoController {
 
     @Autowired
     private FieldMongoService fieldService;
+
+    @Autowired
+    private CropSeasonService cropSeasonService;
 
     // ========================
     // CREATE
@@ -51,6 +55,14 @@ public class FieldMongoController {
     @GetMapping("/user/{userId}")
     public List<Field> getByUser(@PathVariable String userId) {
         return fieldService.getByUser(userId);
+    }
+
+    // ========================
+    // LIST CROP SEASONS
+    // ========================
+    @GetMapping("/{id}/seasons")
+    public ResponseEntity<?> listSeasons(@PathVariable String id) {
+        return ResponseEntity.ok(cropSeasonService.listSeasons(id));
     }
 
     // ========================

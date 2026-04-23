@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.Date;
 import java.util.List;
 
 @Service
@@ -21,10 +22,18 @@ public class IrrigationHistoryService {
     private FieldMongoRepository fieldMongoRepository;
 
     public List<IrrigationHistory> getByFieldId(String fieldId) {
-        Field field = fieldMongoRepository.findById(fieldId).orElse(null);
-        if (field != null && field.getStartTime() != null) {
+        return getByFieldId(fieldId, null);
+    }
+
+    public List<IrrigationHistory> getByFieldId(String fieldId, Date cropStartTime) {
+        Date crop = cropStartTime;
+        if (crop == null) {
+            Field field = fieldMongoRepository.findById(fieldId).orElse(null);
+            if (field != null) crop = field.getStartTime();
+        }
+        if (crop != null) {
             return irrigationHistoryRepository
-                    .findByFieldIdAndCropStartTimeOrderByTimeDesc(fieldId, field.getStartTime());
+                    .findByFieldIdAndCropStartTimeOrderByTimeDesc(fieldId, crop);
         }
         return irrigationHistoryRepository.findByFieldIdOrderByTimeDesc(fieldId);
     }

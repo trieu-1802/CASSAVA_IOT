@@ -10,7 +10,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -42,18 +44,22 @@ public class SimulationController {
     }
 
     @GetMapping("/chart")
-    public ResponseEntity<?> getChart(@RequestParam String fieldId) {
+    public ResponseEntity<?> getChart(
+            @RequestParam String fieldId,
+            @RequestParam(required = false) String cropStartTime) {
 
-        Field field = fieldMongoRepository.findById(fieldId).orElse(null);
+        Date crop = (cropStartTime == null || cropStartTime.isBlank())
+                ? null
+                : Date.from(Instant.parse(cropStartTime));
 
-        List<FieldSimulationResult> data;
-        if (field != null && field.getStartTime() != null) {
-            // Chỉ lấy kết quả của vụ hiện tại
-            data = simulationResultRepository
-                    .findByFieldIdAndCropStartTimeOrderByTimeAsc(fieldId, field.getStartTime());
-        } else {
-            data = simulationResultRepository.findByFieldIdOrderByTimeAsc(fieldId);
+        if (crop == null) {
+            Field field = fieldMongoRepository.findById(fieldId).orElse(null);
+            if (field != null) crop = field.getStartTime();
         }
+
+        List<FieldSimulationResult> data = crop != null
+                ? simulationResultRepository.findByFieldIdAndCropStartTimeOrderByTimeAsc(fieldId, crop)
+                : simulationResultRepository.findByFieldIdOrderByTimeAsc(fieldId);
 
         List<Double> labels = new ArrayList<>();
         List<Double> yield = new ArrayList<>();
