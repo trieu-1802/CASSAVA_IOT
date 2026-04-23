@@ -3,7 +3,7 @@
 import axios from 'axios';
 
 const groupService = axios.create({
-  baseURL: 'http://localhost:8081/mongo/field-group',
+  baseURL: `${import.meta.env.VITE_API_BASE || 'http://localhost:8081'}/mongo/field-group`,
   headers: {
     'Content-Type': 'application/json',
   }

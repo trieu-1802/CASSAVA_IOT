@@ -138,14 +138,18 @@ public class NasaBackupService {
     }
 
     private void uploadToFirebase(String field, LocalDateTime time, MeasuredData data) {
-        String dateKey = time.format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
-        String hourKey = time.format(DateTimeFormatter.ofPattern("HH:mm:ss"));
+        try {
+            String dateKey = time.format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
+            String hourKey = time.format(DateTimeFormatter.ofPattern("HH:mm:ss"));
 
-        DatabaseReference ref = FirebaseDatabase.getInstance().getReference("user")
-                .child(field).child("measured_data")
-                .child(dateKey).child(hourKey);
+            DatabaseReference ref = FirebaseDatabase.getInstance().getReference("user")
+                    .child(field).child("measured_data")
+                    .child(dateKey).child(hourKey);
 
-        ref.setValueAsync(data);
+            ref.setValueAsync(data);
+        } catch (IllegalStateException e) {
+            // Firebase not initialized — skip silently
+        }
     }
 
     private String readUrl(String urlString) throws Exception {

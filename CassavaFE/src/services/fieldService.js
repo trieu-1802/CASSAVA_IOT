@@ -18,7 +18,7 @@ export default api;
 import axios from 'axios';
 
 const fieldService = axios.create({
-  baseURL: 'http://localhost:8081/mongo',
+  baseURL: `${import.meta.env.VITE_API_BASE || 'http://localhost:8081'}/mongo`,
   headers: {
     'Content-Type': 'application/json',
   }
