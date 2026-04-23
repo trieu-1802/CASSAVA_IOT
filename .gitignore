@@ -1,5 +1,24 @@
+# Runtime / generated
 irrigation_data1.csv
-.claude/
 resultWeatherThaiLan.csv
 thEquiv_tracking.csv
 paho*/
+
+# Build output
+CassavaFE/dist/
+CassavaFE/node_modules/
+cassavaBE/target/
+
+# Local env overrides (team-wide .env.development / .env.production ARE committed)
+.env.local
+.env.*.local
+
+# IDE / editor
+.claude/
+.idea/
+.vscode/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db

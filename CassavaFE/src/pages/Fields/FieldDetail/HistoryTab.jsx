@@ -1,79 +1,67 @@
-// src/pages/Fields/FieldDetail/HistoryTab.jsx
-/** 
-import React from 'react';
-import { Typography, Table } from 'antd';
-
-const { Title } = Typography;
-
-const HistoryTab = () => {
-  // Cột của bảng lịch sử tưới
-  const columns = [
-    {
-      title: 'Người tưới',
-      dataIndex: 'irrigator',
-      key: 'irrigator',
-    },
-    {
-      title: 'Thời gian tưới',
-      dataIndex: 'time',
-      key: 'time',
-    },
-    {
-      title: 'Lượng nước tưới (Lít/ha)',
-      dataIndex: 'waterAmount',
-      key: 'waterAmount',
-    },
-  ];
-
-  // Dữ liệu mẫu (Mock data)
-  const data = [
-    { key: '1', irrigator: 'Hệ thống tự động', time: '2026-03-29 08:00:00', waterAmount: 1500 },
-    { key: '2', irrigator: 'Nguyễn Văn A', time: '2026-03-28 17:30:00', waterAmount: 1200 },
-  ];
-
-  return (
-    <div style={{ padding: '16px 0' }}>
-      <Title level={4}>Lịch sử tưới tiêu</Title>
-      <Table 
-        columns={columns} 
-        dataSource={data} 
-        pagination={{ pageSize: 5 }} 
-        bordered
-      />
-    </div>
-  );
-};
-
-export default HistoryTab;
-*/
 import React, { useState, useEffect } from 'react';
-import { Typography, Table, message } from 'antd';
+import { Typography, Table, Select, Space, Tag, message } from 'antd';
 import dayjs from 'dayjs';
 import fieldService from '../../../services/fieldService';
 
-const { Title } = Typography;
+const { Title, Text } = Typography;
+
+const formatSeasonLabel = (s) => {
+  const start = s.cropStartTime ? dayjs(s.cropStartTime).format('DD/MM/YYYY') : '—';
+  if (s.isCurrent) {
+    const end = s.cropEndTime ? dayjs(s.cropEndTime).format('DD/MM/YYYY') : 'hiện tại';
+    return `${start} → ${end}`;
+  }
+  const end = s.cropEndTime ? dayjs(s.cropEndTime).format('DD/MM/YYYY') : '—';
+  return `${start} → ${end}`;
+};
 
 const HistoryTab = ({ fieldId = 'fieldTest' }) => {
   const [loading, setLoading] = useState(false);
   const [dataSource, setDataSource] = useState([]);
-
-  const fetchHistory = async () => {
-    setLoading(true);
-    try {
-      const response = await fieldService.get(`/irrigation-history?fieldId=${fieldId}`);
-      const data = response?.data || response;
-      setDataSource(Array.isArray(data) ? data : []);
-    } catch (error) {
-      console.error("Fetch error:", error);
-      message.error("Lỗi khi tải lịch sử tưới tiêu!");
-    } finally {
-      setLoading(false);
-    }
-  };
+  const [seasons, setSeasons] = useState([]);
+  const [selectedCrop, setSelectedCrop] = useState(null); // ISO string of cropStartTime
 
   useEffect(() => {
-    fetchHistory();
+    let cancelled = false;
+    const loadSeasons = async () => {
+      try {
+        const res = await fieldService.get(`/field/${fieldId}/seasons`);
+        if (cancelled) return;
+        const list = res.data || [];
+        setSeasons(list);
+        const current = list.find((s) => s.isCurrent) || list[0];
+        setSelectedCrop(current?.cropStartTime || null);
+      } catch (err) {
+        console.error('Lỗi tải danh sách vụ:', err);
+        message.error('Không thể tải danh sách vụ mùa!');
+      }
+    };
+    loadSeasons();
+    return () => { cancelled = true; };
   }, [fieldId]);
+
+  useEffect(() => {
+    if (!fieldId || selectedCrop === null) return;
+    let cancelled = false;
+    const fetchHistory = async () => {
+      setLoading(true);
+      try {
+        const params = { fieldId };
+        if (selectedCrop) params.cropStartTime = selectedCrop;
+        const response = await fieldService.get('/irrigation-history', { params });
+        if (cancelled) return;
+        const data = response?.data || response;
+        setDataSource(Array.isArray(data) ? data : []);
+      } catch (error) {
+        console.error('Fetch error:', error);
+        if (!cancelled) message.error('Lỗi khi tải lịch sử tưới tiêu!');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    fetchHistory();
+    return () => { cancelled = true; };
+  }, [fieldId, selectedCrop]);
 
   const columns = [
     {
@@ -99,34 +87,54 @@ const HistoryTab = ({ fieldId = 'fieldTest' }) => {
       title: 'Thời gian tưới (Phút)',
       dataIndex: 'duration',
       key: 'duration',
-      render: (val) => val ? val.toFixed(1) : '0',
+      render: (val) => (val ? val.toFixed(1) : '0'),
     },
   ];
 
   return (
     <div style={{ padding: '16px 0' }}>
-      <Title level={4}>Lịch sử tưới tiêu</Title>
-      <Table 
-        columns={columns} 
-        dataSource={dataSource} 
-        rowKey="id" 
+      <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+        <Title level={4} style={{ margin: 0 }}>Lịch sử tưới tiêu</Title>
+        <Space size={8} wrap>
+          <Text strong>Mùa vụ:</Text>
+          <Select
+            style={{ minWidth: 260 }}
+            value={selectedCrop}
+            onChange={setSelectedCrop}
+            options={seasons.map((s) => ({
+              value: s.cropStartTime,
+              label: (
+                <Space size={6}>
+                  <span>{formatSeasonLabel(s)}</span>
+                  {s.isCurrent && <Tag color="green" style={{ margin: 0 }}>Đang chạy</Tag>}
+                </Space>
+              ),
+            }))}
+            placeholder="Chọn mùa vụ"
+            notFoundContent="Chưa có vụ nào"
+          />
+        </Space>
+      </Space>
+      <Table
+        columns={columns}
+        dataSource={dataSource}
+        rowKey="id"
         loading={loading}
-        pagination={{ 
+        pagination={{
           pageSize: 5,
-          placement: 'bottomCenter', 
+          placement: 'bottomCenter',
           showLessItems: true,
           showSizeChanger: false,
           hideOnSinglePage: true,
-          // GIẢI PHÁP: Ép style cho container phân trang
-          style: { 
-            display: 'flex', 
-            justifyContent: 'center', 
-            float: 'none', // Một số bản Antd cũ dùng float: right
-            width: '100%' 
-          } 
-        }} 
+          style: {
+            display: 'flex',
+            justifyContent: 'center',
+            float: 'none',
+            width: '100%',
+          },
+        }}
         bordered
-        locale={{ emptyText: 'Không có dữ liệu lịch sử' }}
+        locale={{ emptyText: 'Không có dữ liệu lịch sử cho vụ này' }}
       />
     </div>
   );

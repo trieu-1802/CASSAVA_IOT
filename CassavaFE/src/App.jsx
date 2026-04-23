@@ -24,7 +24,7 @@ import UserList from './pages/Users/UserList';
 
 function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename={import.meta.env.BASE_URL}>
       <Routes>
         {/* === NHÓM ROUTE ĐỘC LẬP (Không có Sidebar) === */}
         <Route path="/login" element={<Login />} />

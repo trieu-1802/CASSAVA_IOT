@@ -5,6 +5,8 @@ import com.example.demo.service.Mongo.IrrigationHistoryService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.Instant;
+import java.util.Date;
 import java.util.List;
 
 @CrossOrigin(origins = "http://localhost:5173")
@@ -16,8 +18,13 @@ public class IrrigationHistoryController {
     private IrrigationHistoryService irrigationHistoryService;
 
     @GetMapping
-    public List<IrrigationHistory> getByFieldId(@RequestParam String fieldId) {
-        return irrigationHistoryService.getByFieldId(fieldId);
+    public List<IrrigationHistory> getByFieldId(
+            @RequestParam String fieldId,
+            @RequestParam(required = false) String cropStartTime) {
+        Date crop = (cropStartTime == null || cropStartTime.isBlank())
+                ? null
+                : Date.from(Instant.parse(cropStartTime));
+        return irrigationHistoryService.getByFieldId(fieldId, crop);
     }
 
     @PostMapping
