@@ -27,7 +27,7 @@ mvn test              # run all tests
 mvn test -Dtest=ClassName#methodName   # run a single test
 ```
 
-Both FE and BE must run concurrently for development; the FE hardcodes `http://localhost:8081` in its three Axios instances (no Vite proxy config).
+Both FE and BE must run concurrently for development. FE Axios instances read `VITE_API_BASE` from env files — `.env.development` sets it to `http://localhost:8081`, `.env.production` sets it to `/cassava/api` (relative, resolved by nginx under the prod deploy). No Vite proxy config.
 
 ## Architecture
 
@@ -73,7 +73,7 @@ Main app (`Demo1Application`) uses `@EnableCaching` and `@EnableScheduling`. `Fi
 
 Auth flow: JWT with 24h expiry (HS512). Roles are ADMIN and USER. Public endpoints: `/api/auth/**` only; `/mongo/**` and `/simulation/**` are permitAll. Token injected via `JwtAuthFilter` in the Spring Security filter chain.
 
-**CORS gotcha**: `SecurityConfig` restricts CORS to `http://localhost:5173`, but `firebase/CorsConfig.java` has a separate `@Bean` allowing ALL origins for `/api/**`. Be aware of this dual configuration — it is now only relevant to `/api/auth/**` since the other legacy `/api/*` controllers were removed.
+**CORS gotcha**: Two separate configurations exist — `SecurityConfig` restricts CORS to `http://localhost:5173` for Spring Security's filter, and `firebase/CorsConfig.java` registers a `WebMvcConfigurer` bean that applies to `/**` with origins `http://localhost:5173` + `http://112.137.129.218` (the prod IP). In production the FE is served same-origin via nginx so CORS is not actually triggered; the configs matter only for dev and for any direct external caller.
 
 ### Frontend (`CassavaFE/src/`)
 
@@ -85,11 +85,11 @@ React 19 + Vite, Ant Design v6, React Router v7, Recharts for charts.
   - `FieldGroups/`: `FieldGroupList` + `components/FieldGroupModal` — CRUD for groups that share a weather station
   - `Weather/`: `WeatherGroupList` (group picker), `WeatherDashboard` (per-group `/weather/:groupId`), `WeatherDetail` (per-sensor `/weather/detail/:sensorId`) — weather is accessed via the group, not an individual field
   - `Users/` (UserList)
-- **services/**: Four Axios instances with different base URLs, plus one empty stub:
-  - `api.js` → `http://localhost:8081` — injects `Authorization: Bearer <token>` from `localStorage.user.accessToken`
-  - `authService.js` → `http://localhost:8081/api` — same `Authorization: Bearer` interceptor
-  - `fieldService.js` → `http://localhost:8081/mongo` — **no interceptor**; works because `/mongo/**` is `permitAll` in `SecurityConfig`
-  - `groupService.js` — field-group endpoints (same `/mongo` host)
+- **services/**: Four Axios instances, each with `baseURL` built from `import.meta.env.VITE_API_BASE` (fallback `http://localhost:8081`), plus one empty stub:
+  - `api.js` → `${VITE_API_BASE}` — injects `Authorization: Bearer <token>` from `localStorage.user.accessToken`
+  - `authService.js` → `${VITE_API_BASE}/api` — same `Authorization: Bearer` interceptor
+  - `fieldService.js` → `${VITE_API_BASE}/mongo` — JWT interceptor attached; endpoints are `permitAll` in `SecurityConfig` but the token is still sent
+  - `groupService.js` → `${VITE_API_BASE}/mongo/field-group`
   - `weatherService.js` — empty stub
 - **components/**: `Layout/MainLayout` only (responsive sidebar — `Drawer` on mobile <768px, collapsible `Sider` on desktop). Feature-specific components live under their `pages/<feature>/components/` folder.
 - **utils/**: `exportExcel.js`, `formatters.js` — **both are empty stubs**
@@ -131,18 +131,39 @@ Note: the sensor formerly named `humidity` was renamed to `relativeHumidity` —
 ### Key External Dependencies
 
 - **MongoDB**: Remote instance at `112.137.129.218:27017`, database `iot_agriculture`
-- **Firebase**: Service account key expected at `D:\DATN\serviceAccountKey.json` (hardcoded Windows path in `FirebaseInitialization`)
+- **Firebase**: Service account key looked up at `D:\DATN\serviceAccountKey.json` (Windows dev) and `/opt/cassava/serviceAccountKey.json` (Linux prod). `FirebaseInitialization` returns `null` gracefully if the file is missing; call sites in `NasaBackupService` and `entity/Field.java` skip uploads when the bean is null rather than throwing.
 - **MQTT**: HiveMQ public broker
 - **APIs**: NASA Power (no key), OpenWeather (key in `MqttWeatherService`)
 
+## Production Deployment
+
+Deployed at `http://112.137.129.218/` on a UET-managed Ubuntu server (user `uet`). Single-port nginx (80) fans traffic path-based:
+
+```
+/               → /opt/cassava/webroot/index.html  (landing page: 4 crop cards)
+/cassava/       → /opt/cassava/webroot/cassava/    (CassavaFE SPA, base=/cassava/)
+/cassava/api/*  → proxy_pass http://127.0.0.1:8081/  (Spring Boot, loopback-only)
+```
+
+Key artifacts (all committed under `deploy/`):
+- `deploy/nginx/cassava.conf` — site config; proxy trailing slash strips `/cassava/api/`; `proxy_read_timeout 600s` for long simulations
+- `deploy/systemd/cassava-be.service` — runs `java -jar /opt/cassava/cassava-be.war` as `uet`, sets `SPRING_PROFILES_ACTIVE=prod`
+- `deploy/DEPLOY.md` — full build/upload/install runbook + troubleshooting
+- `cassavaBE/src/main/resources/application-prod.properties` — activated by prod profile; binds `server.address=127.0.0.1`, logs to `/var/log/cassava/app.log`
+- `landing/` — static HTML landing page with UET logo and one card per crop (cassava active, others "Sắp ra mắt")
+
+FE build path: `vite.config.js` sets `base: '/cassava/'` only when `mode === 'production'`; `App.jsx` passes `basename={import.meta.env.BASE_URL}` into `BrowserRouter` so client-side routes resolve correctly under the subpath. Assets must be imported (`import logoUet from '.../logo-uet.png'`) — never reference `/src/...` paths, which only work in dev.
+
+Update flow: FE-only changes → rebuild + rsync `dist/` to `/opt/cassava/webroot/cassava/`, no restart. BE-only changes → rebuild WAR, rsync, `systemctl restart cassava-be`.
+
 ## Git Remote
 
-- **Repository**: `git@github.com:trieu-1802/IOT_Agriculture.git`
+- **Repository**: `git@github.com:trieu-1802/CASSAVA_IOT.git`
 - **Branch**: `master`
 
 ## Conventions
 
 - Backend packaging is WAR (servlet-based with embedded Tomcat)
 - Java 17 required
-- Frontend API calls use three separate Axios instances — check which one matches the endpoint prefix before adding new API calls
+- Frontend API calls use four separate Axios instances — check which one matches the endpoint prefix before adding new API calls
 - MongoDB collections: `field`, `field_group`, `field_group_sensor`, `field_sensor`, `sensor_value`, `simulation_result`, `irrigation_history`, `irrigation_schedule`, `users`, `diseases`
