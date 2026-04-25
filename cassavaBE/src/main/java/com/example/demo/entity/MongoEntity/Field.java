@@ -61,6 +61,10 @@ public class Field {
     private double fertilizationLevel;
     private Integer valveId;
 
+    // SIMULATION = ruộng mô phỏng (không gửi lệnh tưới ra edge)
+    // OPERATION  = ruộng thực thi (sẽ publish MQTT khi bridge sẵn sàng)
+    private String mode = "SIMULATION";
+
     // Các biến bạn muốn để mặc định (không truyền từ JSON)
     private String idUser = "69ccc364a1e7905cc9356ce3"; // Default ID
     private int irrigationDuration = 2;
@@ -169,4 +173,7 @@ public class Field {
 
     public Integer getValveId() { return valveId; }
     public void setValveId(Integer valveId) { this.valveId = valveId; }
+
+    public String getMode() { return mode; }
+    public void setMode(String mode) { this.mode = mode; }
 }

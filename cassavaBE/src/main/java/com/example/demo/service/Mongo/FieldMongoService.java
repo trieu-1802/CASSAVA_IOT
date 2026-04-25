@@ -69,6 +69,7 @@ public class FieldMongoService {
         }
 
         validateField(field);
+        field.setMode(normalizeMode(field.getMode()));
 
         field.setId(null);
         if (field.getStartTime() == null) {
@@ -78,6 +79,15 @@ public class FieldMongoService {
         Field saved = fieldRepository.save(field);
         fieldSensorService.initDefaultSensors(saved.getId());
         return saved;
+    }
+
+    private String normalizeMode(String mode) {
+        if (mode == null) return "SIMULATION";
+        String m = mode.trim().toUpperCase();
+        if (!m.equals("SIMULATION") && !m.equals("OPERATION")) {
+            throw new RuntimeException("mode chỉ nhận giá trị SIMULATION hoặc OPERATION");
+        }
+        return m;
     }
     public Field clone (String srcFieldId, String newName) {
         if (newName == null || newName.trim().isEmpty()) {
@@ -196,6 +206,7 @@ public class FieldMongoService {
         old.setName(newData.getName());
         old.setAcreage(newData.getAcreage());
         old.setAutoIrrigation(newData.isAutoIrrigation());
+        old.setMode(normalizeMode(newData.getMode()));
 
         old.setFieldCapacity(newData.getFieldCapacity());
         old.setIrrigationDuration(newData.getIrrigationDuration());

@@ -81,7 +81,8 @@ export default FieldModal;
 */
 // src/pages/Fields/components/FieldModal.jsx
 import React, { useEffect, useState } from 'react';
-import { Modal, Form, Input, InputNumber, Switch, Row, Col, Divider, Select, DatePicker, message } from 'antd';
+import { Modal, Form, Input, InputNumber, Switch, Row, Col, Divider, Select, DatePicker, Radio, message } from 'antd';
+import { ExperimentOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import groupService from '../../../services/groupService';
 
@@ -114,12 +115,13 @@ const FieldModal = ({ open, onCancel, onSubmit, initialData }) => {
       if (initialData) {
         form.setFieldsValue({
           ...initialData,
+          mode: initialData.mode || 'SIMULATION',
           startTime: initialData.startTime ? dayjs(initialData.startTime) : null,
           endTime: initialData.endTime ? dayjs(initialData.endTime) : null,
         });
       } else {
         form.resetFields();
-        form.setFieldsValue({ startTime: dayjs(), endTime: null });
+        form.setFieldsValue({ startTime: dayjs(), endTime: null, mode: 'SIMULATION' });
       }
     }
   }, [open, initialData, form]);
@@ -148,6 +150,23 @@ const FieldModal = ({ open, onCancel, onSubmit, initialData }) => {
       style={{ maxWidth: 700 }}
     >
       <Form form={form} layout="vertical" name="field_form">
+        <Form.Item
+          name="mode"
+          label="Loại cánh đồng"
+          rules={[{ required: true, message: 'Vui lòng chọn loại cánh đồng!' }]}
+          extra="Mô phỏng: chỉ chạy mô hình, KHÔNG gửi lệnh tưới ra thiết bị. Thực thi: sẽ điều khiển van bơm thật khi MQTT bridge sẵn sàng."
+          initialValue="SIMULATION"
+        >
+          <Radio.Group buttonStyle="solid" style={{ width: '100%' }}>
+            <Radio.Button value="SIMULATION" style={{ width: '50%', textAlign: 'center' }}>
+              <ExperimentOutlined /> Mô phỏng
+            </Radio.Button>
+            <Radio.Button value="OPERATION" style={{ width: '50%', textAlign: 'center' }}>
+              <ThunderboltOutlined /> Thực thi
+            </Radio.Button>
+          </Radio.Group>
+        </Form.Item>
+
         <Row gutter={16}>
           <Col xs={24} sm={12}>
             <Form.Item

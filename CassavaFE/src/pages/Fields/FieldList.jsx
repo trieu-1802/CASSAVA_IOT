@@ -227,6 +227,17 @@ const FieldList = () => {
       render: (text) => <strong>{text}</strong>,
     },
     {
+      title: 'Loại',
+      dataIndex: 'mode',
+      key: 'mode',
+      render: (mode) => {
+        const m = mode || 'SIMULATION';
+        return m === 'OPERATION'
+          ? <Tag color="volcano">Thực thi</Tag>
+          : <Tag color="purple">Mô phỏng</Tag>;
+      },
+    },
+    {
       title: 'Nhóm',
       dataIndex: 'groupId',
       key: 'groupId',
