@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Form, InputNumber, Card, Row, Col, Divider, Button, Space, Tag, Table,
-  DatePicker, message, Modal, Popconfirm, Empty
+  DatePicker, message, Modal, Popconfirm, Empty, Alert, Tooltip
 } from 'antd';
 import {
   PlayCircleOutlined, ClockCircleOutlined, ExclamationCircleOutlined,
@@ -12,15 +12,18 @@ import fieldService from '../../../services/fieldService';
 
 const { confirm } = Modal;
 
-const STATUS_COLOR = {
-  PENDING: 'blue',
-  RUNNING: 'gold',
-  DONE: 'green',
-  CANCELLED: 'default',
-  FAILED: 'red',
+const STATUS_META = {
+  PENDING:   { color: 'blue',     label: 'Chờ gửi' },
+  SENT:      { color: 'cyan',     label: 'Đã gửi edge' },
+  RUNNING:   { color: 'gold',     label: 'Đang tưới' },
+  DONE:      { color: 'green',    label: 'Hoàn tất' },
+  CANCELLED: { color: 'default',  label: 'Đã hủy' },
+  FAILED:    { color: 'red',      label: 'Thất bại' },
+  NO_ACK:    { color: 'volcano',  label: 'Không phản hồi' },
 };
 
-const ManualIrrigationTab = ({ fieldId, fieldName }) => {
+const ManualIrrigationTab = ({ fieldId, fieldName, fieldMode = 'OPERATION' }) => {
+  const isSimulation = fieldMode === 'SIMULATION';
   const [scheduledAt, setScheduledAt] = useState(dayjs().add(5, 'minute'));
   const [durationMinutes, setDurationMinutes] = useState(10);
   const [amount, setAmount] = useState(null);
@@ -152,8 +155,17 @@ const ManualIrrigationTab = ({ fieldId, fieldName }) => {
     {
       title: 'Trạng thái',
       dataIndex: 'status',
-      render: (s) => <Tag color={STATUS_COLOR[s] || 'default'}>{s}</Tag>,
-      width: 120,
+      render: (s, row) => {
+        const meta = STATUS_META[s] || { color: 'default', label: s || '—' };
+        const tip = [];
+        if (row.sentAt)     tip.push(`Gửi edge: ${dayjs(row.sentAt).format('DD/MM HH:mm:ss')}`);
+        if (row.startedAt)  tip.push(`Bắt đầu: ${dayjs(row.startedAt).format('DD/MM HH:mm:ss')}`);
+        if (row.finishedAt) tip.push(`Kết thúc: ${dayjs(row.finishedAt).format('DD/MM HH:mm:ss')}`);
+        if (row.errorMessage) tip.push(`Lỗi: ${row.errorMessage}`);
+        const tag = <Tag color={meta.color}>{meta.label}</Tag>;
+        return tip.length ? <Tooltip title={tip.join(' • ')}>{tag}</Tooltip> : tag;
+      },
+      width: 140,
     },
     {
       title: 'Người tạo',
@@ -182,6 +194,15 @@ const ManualIrrigationTab = ({ fieldId, fieldName }) => {
       <Row gutter={[24, 24]}>
         <Col xs={24} md={10}>
           <Card title={<span><ClockCircleOutlined /> Đặt lịch tưới</span>}>
+            {isSimulation && (
+              <Alert
+                type="warning"
+                showIcon
+                style={{ marginBottom: 16 }}
+                message="Cánh đồng đang ở chế độ Mô phỏng"
+                description="Chỉ ruộng ở chế độ Thực thi (OPERATION) mới gửi được lệnh tưới xuống edge. Hãy đổi chế độ trong phần chỉnh sửa cánh đồng nếu muốn đặt lịch."
+              />
+            )}
             <Form layout="vertical">
               <Form.Item label="Thời điểm tưới">
                 <DatePicker
@@ -221,6 +242,7 @@ const ManualIrrigationTab = ({ fieldId, fieldName }) => {
                   size="large"
                   onClick={showConfirmSchedule}
                   loading={submitting}
+                  disabled={isSimulation}
                   block
                 >
                   Đặt lịch
@@ -230,6 +252,7 @@ const ManualIrrigationTab = ({ fieldId, fieldName }) => {
                   size="large"
                   onClick={showConfirmInstant}
                   loading={submitting}
+                  disabled={isSimulation}
                   block
                 >
                   Tưới ngay
