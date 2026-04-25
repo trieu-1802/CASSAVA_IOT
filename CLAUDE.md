@@ -34,10 +34,16 @@ Both FE and BE must run concurrently for development. FE Axios instances read `V
 ```
 React SPA (5173) ──Axios──▶ Spring Boot API (8081) ──▶ MongoDB (remote)
                                     │
-                          ┌─────────┼─────────┐
-                       MQTT       NASA API   Firebase
-                    (HiveMQ)    (weather)   (storage)
+                  ┌─────────────┬───┴──────────┬───────────┐
+              MQTT weather  MQTT operation   NASA API    Firebase
+              (HiveMQ pub)  (private mosq.)  (weather)   (storage)
+                  │               │
+              sensors in     valves out / ack in
+                                  │
+                                edge (pi3)
 ```
+
+Two distinct MQTT paths: **weather** (HiveMQ public, sensors → BE) and **operation** (private mosquitto, BE ↔ edge for irrigation commands and acks). See `deploy/MQTT.md` for the operation-layer architecture.
 
 Main app (`Demo1Application`) uses `@EnableCaching` and `@EnableScheduling`. `FieldSimulator.runScheduledSimulationForAllFields()` runs the crop simulation for every Mongo field twice daily at **07:00 and 17:00 `Asia/Ho_Chi_Minh`** (cron `0 0 7,17 * * *`). On-demand runs are still available via `GET /simulation/run?fieldId=X`.
 
@@ -50,13 +56,14 @@ Main app (`Demo1Application`) uses `@EnableCaching` and `@EnableScheduling`. `Fi
   - `FieldSensorController` (`/mongo/field/{fieldId}/sensor`) — per-field sensor mapping (soil moisture sensors)
   - `SensorValueController` (`/sensor-values`) — sensor history and combined values
   - `IrrigationHistoryController` (`/mongo/irrigation-history`) — irrigation record log
-  - `IrrigationScheduleController` (`/mongo/irrigation-schedule`) — manual irrigation scheduling (PENDING/RUNNING/DONE/CANCELLED/FAILED lifecycle)
+  - `IrrigationScheduleController` (`/mongo/irrigation-schedule`) — manual irrigation scheduling (`PENDING/SENT/RUNNING/DONE/CANCELLED/FAILED/NO_ACK` lifecycle — see "Manual irrigation execution" below)
   - `SimulationController` (`/simulation`) — run/chart simulation
   - `UserController` (`/api/auth`) — login, register, list users
 - **service/**: Split between the root and a `Mongo/` subpackage.
   - `service/`: `JwtService`, `MqttWeatherService` (MQTT subscriber + NASA fallback), `NasaBackupService`, `UserService`
-  - `service/Mongo/`: `FieldMongoService`, `FieldGroupService`, `FieldGroupSensorService`, `FieldSensorService`, `FieldSimulator` (crop simulation + auto irrigation history), `SensorValueService`, `IrrigationHistoryService`, `IrrigationScheduleService`, plus the `WeatherProvider` interface and its `MongoWeatherProvider` implementation
-  - **Empty placeholders** (do not confuse with real services): `service/Mongo/IrrigationService.java` and `mqtt/MqttConfig.java` are empty class stubs — no logic yet
+  - `service/Mongo/`: `FieldMongoService`, `FieldGroupService`, `FieldGroupSensorService`, `FieldSensorService`, `FieldSimulator` (crop simulation + auto irrigation history), `SensorValueService`, `IrrigationHistoryService`, `IrrigationScheduleService`, `IrrigationScheduleScheduler` (15s/30s ticks driving the schedule lifecycle for both modes), plus the `WeatherProvider` interface and its `MongoWeatherProvider` implementation
+  - **Empty placeholder** (do not confuse with real services): `service/Mongo/IrrigationService.java` is an empty class stub — no logic yet
+- **mqtt/**: Operation-layer MQTT components (see `deploy/MQTT.md`). `MqttConfig` (Paho client bean with auto-reconnect, cleanSession=false), `MqttCommandPublisher` (publishes `OperationCommand` to `cassava/field/{fieldId}/valve/{valveId}/cmd` at QoS 1), `MqttAckListener` (subscribes to `cassava/field/+/valve/+/ack`, dispatches into `IrrigationScheduleService.handleAck`), `MqttTopics` (topic constants), `OperationCommand` / `OperationAck` (JSON payload POJOs)
 - **entity/**: Two separate `Field` classes (see disambiguation below), plus `User`, `FieldSensor`, `FieldGroup`, `FieldGroupSensor`, `SensorValue`, `FieldSimulationResult`, `IrrigationHistory`, `IrrigationSchedule`, `Disease`; some leftover Firebase-era DTOs/entities still live in `entity/` (e.g. `FieldDTO`, `CustomizedParameters`, `Humidity`, `MeasuredData`, `WeatherRequest`, `ChartData`, `HistoryIrrigation`) because the simulation model `entity/Field.java` still depends on several of them
 - **repositories/**: Spring Data MongoDB repos under `repositories/mongo/` — includes `FieldGroupRepository`, `FieldGroupSensorRepository`, `FieldSimulationResultRepository`, `IrrigationHistoryRepository`, `IrrigationScheduleRepository`
 
@@ -67,6 +74,13 @@ Main app (`Demo1Application`) uses `@EnableCaching` and `@EnableScheduling`. `Fi
 **Reset crop**: `POST /mongo/field/resetCrop/{id}` resets per-crop state on the `Field` Mongo document (startTime, DAP=1, irrigating=false) for a new growing cycle. Note: per-crop history (`simulation_result`, `irrigation_history`) is **retained** and distinguished by `cropStartTime` — it is not cleared on reset.
 
 **Auto vs. manual irrigation**: A field's `autoIrrigation` flag is mutually exclusive with manual scheduling. `IrrigationScheduleService.create()` rejects new schedules while `autoIrrigation=true`, and requires a valid `valveId` in the range 1–4 (either on the schedule or inherited from the field).
+
+**Field mode (SIMULATION vs OPERATION)**: Every Mongo `Field` has a `mode` string (default `SIMULATION`, normalized + validated to one of `SIMULATION` / `OPERATION` in `FieldMongoService`). It is **independent** of `autoIrrigation` and only governs how a manual schedule is *executed*:
+
+- `OPERATION` — the real path. `IrrigationScheduleScheduler` publishes the schedule to the operation MQTT broker (`MqttCommandPublisher`) at its `scheduledTime`, marks `SENT`, and waits for an ack on `cassava/field/+/valve/+/ack`. `MqttAckListener` resolves it to `DONE`/`FAILED`. If no ack arrives within `mqtt.operation.ack-timeout-seconds`, a separate tick marks it `NO_ACK`.
+- `SIMULATION` — the demo/dev path. **No MQTT traffic**. The same scheduler tick promotes `PENDING → RUNNING` (sets `startedAt`); a second tick (`completeRunningSimulations`) promotes `RUNNING → DONE` once `startedAt + durationSeconds` has elapsed. The FE shows the same control screens; only the underlying execution differs.
+
+Both modes share the same controller, repo, and FE tab — the divergence is contained inside `IrrigationScheduleScheduler`. Full architecture, payload schemas, and edge subscriber spec live in `deploy/MQTT.md`.
 - **Jwt/**: `JwtUtils` (token gen/validation), `JwtAuthFilter` (request filter)
 - **config/**: `SecurityConfig` (CORS + auth rules), `WebConfig`
 - **firebase/**: Firebase Realtime Database integration, `CorsConfig` (see CORS note below)
@@ -132,7 +146,8 @@ Note: the sensor formerly named `humidity` was renamed to `relativeHumidity` —
 
 - **MongoDB**: Remote instance at `112.137.129.218:27017`, database `iot_agriculture`
 - **Firebase**: Service account key looked up at `D:\DATN\serviceAccountKey.json` (Windows dev) and `/opt/cassava/serviceAccountKey.json` (Linux prod). `FirebaseInitialization` returns `null` gracefully if the file is missing; call sites in `NasaBackupService` and `entity/Field.java` skip uploads when the bean is null rather than throwing.
-- **MQTT**: HiveMQ public broker
+- **MQTT (weather)**: HiveMQ public broker — sensor ingest only (`MqttWeatherService`)
+- **MQTT (operation)**: Private mosquitto broker — irrigation commands & acks. URL configurable via `mqtt.operation.broker-url` (dev: `tcp://112.137.129.218:1883`; prod: `tcp://127.0.0.1:1883`, mosquitto runs on the same host as the BE). Auto-reconnect enabled — BE starts even if the broker is offline.
 - **APIs**: NASA Power (no key), OpenWeather (key in `MqttWeatherService`)
 
 ## Production Deployment
@@ -149,7 +164,8 @@ Key artifacts (all committed under `deploy/`):
 - `deploy/nginx/cassava.conf` — site config; proxy trailing slash strips `/cassava/api/`; `proxy_read_timeout 600s` for long simulations
 - `deploy/systemd/cassava-be.service` — runs `java -jar /opt/cassava/cassava-be.war` as `uet`, sets `SPRING_PROFILES_ACTIVE=prod`
 - `deploy/DEPLOY.md` — full build/upload/install runbook + troubleshooting
-- `cassavaBE/src/main/resources/application-prod.properties` — activated by prod profile; binds `server.address=127.0.0.1`, logs to `/var/log/cassava/app.log`
+- `deploy/MQTT.md` — operation MQTT architecture, payload schemas, schedule lifecycle, mosquitto setup, edge subscriber spec
+- `cassavaBE/src/main/resources/application-prod.properties` — activated by prod profile; binds `server.address=127.0.0.1`, logs to `/var/log/cassava/app.log`, points operation MQTT to `tcp://127.0.0.1:1883`
 - `landing/` — static HTML landing page with UET logo and one card per crop (cassava active, others "Sắp ra mắt")
 
 FE build path: `vite.config.js` sets `base: '/cassava/'` only when `mode === 'production'`; `App.jsx` passes `basename={import.meta.env.BASE_URL}` into `BrowserRouter` so client-side routes resolve correctly under the subpath. Assets must be imported (`import logoUet from '.../logo-uet.png'`) — never reference `/src/...` paths, which only work in dev.
@@ -167,3 +183,4 @@ Update flow: FE-only changes → rebuild + rsync `dist/` to `/opt/cassava/webroo
 - Java 17 required
 - Frontend API calls use four separate Axios instances — check which one matches the endpoint prefix before adding new API calls
 - MongoDB collections: `field`, `field_group`, `field_group_sensor`, `field_sensor`, `sensor_value`, `simulation_result`, `irrigation_history`, `irrigation_schedule`, `users`, `diseases`
+- Two MQTT subsystems must not be conflated: `MqttWeatherService` (sensor ingest, HiveMQ public) and the `mqtt/` package (irrigation commands, private mosquitto). They use independent Paho clients and brokers.
