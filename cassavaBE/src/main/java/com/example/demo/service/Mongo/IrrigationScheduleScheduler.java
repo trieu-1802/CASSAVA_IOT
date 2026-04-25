@@ -38,7 +38,13 @@ public class IrrigationScheduleScheduler {
         List<IrrigationSchedule> due = scheduleService.getDuePending(now);
         for (IrrigationSchedule s : due) {
             Field field = fieldRepository.findById(s.getFieldId()).orElse(null);
-            if (field == null || !"OPERATION".equalsIgnoreCase(field.getMode())) continue;
+            if (field == null) continue;
+
+            if ("SIMULATION".equalsIgnoreCase(field.getMode())) {
+                scheduleService.updateStatus(s.getId(), Status.RUNNING, null);
+                log.info("Schedule {} (SIMULATION) → RUNNING (no MQTT)", s.getId());
+                continue;
+            }
 
             try {
                 publisher.publishOpenTimed(s.getFieldId(), s.getValveId(), s.getId(), s.getDurationSeconds());
@@ -46,6 +52,20 @@ public class IrrigationScheduleScheduler {
             } catch (Exception e) {
                 log.warn("Publish schedule {} failed: {}", s.getId(), e.getMessage());
             }
+        }
+    }
+
+    @Scheduled(fixedDelay = 15_000L)
+    public void completeRunningSimulations() {
+        long nowMs = System.currentTimeMillis();
+        List<IrrigationSchedule> running = scheduleService.getRunning();
+        for (IrrigationSchedule s : running) {
+            if (s.getStartedAt() == null || s.getDurationSeconds() == null) continue;
+            long finishMs = s.getStartedAt().getTime() + s.getDurationSeconds() * 1000L;
+            if (nowMs < finishMs) continue;
+
+            scheduleService.updateStatus(s.getId(), Status.DONE, null);
+            log.info("Schedule {} (SIMULATION) RUNNING → DONE", s.getId());
         }
     }
 

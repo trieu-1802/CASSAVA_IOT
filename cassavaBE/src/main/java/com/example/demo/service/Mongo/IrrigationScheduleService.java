@@ -31,10 +31,6 @@ public class IrrigationScheduleService {
             throw new RuntimeException("Cánh đồng đang ở chế độ tưới tự động, không thể đặt lịch tưới tay");
         }
 
-        if (!"OPERATION".equalsIgnoreCase(field.getMode())) {
-            throw new RuntimeException("Chỉ ruộng ở chế độ Thực thi (OPERATION) mới được đặt lịch tưới");
-        }
-
         Integer valveId = schedule.getValveId() != null ? schedule.getValveId() : field.getValveId();
         if (valveId == null || valveId < 1 || valveId > 4) {
             throw new RuntimeException("Cánh đồng chưa được gán van bơm hợp lệ (valveId 1-4)");
@@ -130,5 +126,9 @@ public class IrrigationScheduleService {
 
     public List<IrrigationSchedule> getStaleSent(Date sentBefore) {
         return scheduleRepository.findByStatusAndSentAtBeforeOrderBySentAtAsc(Status.SENT, sentBefore);
+    }
+
+    public List<IrrigationSchedule> getRunning() {
+        return scheduleRepository.findByStatus(Status.RUNNING);
     }
 }

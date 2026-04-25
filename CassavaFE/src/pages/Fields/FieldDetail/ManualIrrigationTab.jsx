@@ -196,11 +196,11 @@ const ManualIrrigationTab = ({ fieldId, fieldName, fieldMode = 'OPERATION' }) =>
           <Card title={<span><ClockCircleOutlined /> Đặt lịch tưới</span>}>
             {isSimulation && (
               <Alert
-                type="warning"
+                type="info"
                 showIcon
                 style={{ marginBottom: 16 }}
                 message="Cánh đồng đang ở chế độ Mô phỏng"
-                description="Chỉ ruộng ở chế độ Thực thi (OPERATION) mới gửi được lệnh tưới xuống edge. Hãy đổi chế độ trong phần chỉnh sửa cánh đồng nếu muốn đặt lịch."
+                description="Lệnh tưới sẽ được lưu và mô phỏng vòng đời (chờ → đang tưới → hoàn tất) nhưng không gửi xuống edge. Đổi sang chế độ Thực thi nếu muốn điều khiển van bơm thật."
               />
             )}
             <Form layout="vertical">
@@ -242,7 +242,6 @@ const ManualIrrigationTab = ({ fieldId, fieldName, fieldMode = 'OPERATION' }) =>
                   size="large"
                   onClick={showConfirmSchedule}
                   loading={submitting}
-                  disabled={isSimulation}
                   block
                 >
                   Đặt lịch
@@ -252,7 +251,6 @@ const ManualIrrigationTab = ({ fieldId, fieldName, fieldMode = 'OPERATION' }) =>
                   size="large"
                   onClick={showConfirmInstant}
                   loading={submitting}
-                  disabled={isSimulation}
                   block
                 >
                   Tưới ngay

@@ -17,5 +17,7 @@ public interface IrrigationScheduleRepository extends MongoRepository<Irrigation
 
     List<IrrigationSchedule> findByStatusAndSentAtBeforeOrderBySentAtAsc(Status status, Date sentBefore);
 
+    List<IrrigationSchedule> findByStatus(Status status);
+
     void deleteByFieldId(String fieldId);
 }
