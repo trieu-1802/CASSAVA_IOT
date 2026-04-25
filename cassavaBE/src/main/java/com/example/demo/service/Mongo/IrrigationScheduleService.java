@@ -31,6 +31,10 @@ public class IrrigationScheduleService {
             throw new RuntimeException("Cánh đồng đang ở chế độ tưới tự động, không thể đặt lịch tưới tay");
         }
 
+        if (!"OPERATION".equalsIgnoreCase(field.getMode())) {
+            throw new RuntimeException("Chỉ ruộng ở chế độ Thực thi (OPERATION) mới được đặt lịch tưới");
+        }
+
         Integer valveId = schedule.getValveId() != null ? schedule.getValveId() : field.getValveId();
         if (valveId == null || valveId < 1 || valveId > 4) {
             throw new RuntimeException("Cánh đồng chưa được gán van bơm hợp lệ (valveId 1-4)");
@@ -99,5 +103,32 @@ public class IrrigationScheduleService {
 
     public void delete(String id) {
         scheduleRepository.deleteById(id);
+    }
+
+    public IrrigationSchedule markSent(String id) {
+        IrrigationSchedule s = scheduleRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy lịch tưới ID: " + id));
+        Date now = new Date();
+        s.setStatus(Status.SENT);
+        s.setSentAt(now);
+        s.setUpdatedAt(now);
+        return scheduleRepository.save(s);
+    }
+
+    public IrrigationSchedule handleAck(String id, boolean ok, String errorMessage) {
+        IrrigationSchedule s = scheduleRepository.findById(id).orElse(null);
+        if (s == null) return null;
+        Date now = new Date();
+        s.setStatus(ok ? Status.DONE : Status.FAILED);
+        s.setFinishedAt(now);
+        s.setUpdatedAt(now);
+        if (errorMessage != null) {
+            s.setErrorMessage(errorMessage);
+        }
+        return scheduleRepository.save(s);
+    }
+
+    public List<IrrigationSchedule> getStaleSent(Date sentBefore) {
+        return scheduleRepository.findByStatusAndSentAtBeforeOrderBySentAtAsc(Status.SENT, sentBefore);
     }
 }

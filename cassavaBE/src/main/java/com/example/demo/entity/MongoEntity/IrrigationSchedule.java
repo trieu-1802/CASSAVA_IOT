@@ -10,10 +10,12 @@ public class IrrigationSchedule {
 
     public enum Status {
         PENDING,
+        SENT,
         RUNNING,
         DONE,
         CANCELLED,
-        FAILED
+        FAILED,
+        NO_ACK
     }
 
     @Id
@@ -28,6 +30,7 @@ public class IrrigationSchedule {
     private Status status;
     private Date createdAt;
     private Date updatedAt;
+    private Date sentAt;
     private Date startedAt;
     private Date finishedAt;
     private String errorMessage;
@@ -64,6 +67,9 @@ public class IrrigationSchedule {
 
     public Date getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(Date updatedAt) { this.updatedAt = updatedAt; }
+
+    public Date getSentAt() { return sentAt; }
+    public void setSentAt(Date sentAt) { this.sentAt = sentAt; }
 
     public Date getStartedAt() { return startedAt; }
     public void setStartedAt(Date startedAt) { this.startedAt = startedAt; }
