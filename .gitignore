@@ -13,6 +13,9 @@ cassavaBE/target/
 .env.local
 .env.*.local
 
+# Edge runtime config (real Mongo URI + mosquitto credentials — must not be committed)
+edge/edge_config.json
+
 # IDE / editor
 .claude/
 .idea/

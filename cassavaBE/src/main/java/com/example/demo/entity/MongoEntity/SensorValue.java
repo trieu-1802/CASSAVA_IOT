@@ -22,6 +22,8 @@ public class SensorValue {
 
     private Date time;
 
+    private String source; // "mqtt" | "predicted" | "nasa"
+
     public SensorValue() {}
 
     public SensorValue(String fieldId, String sensorId, double value, Date time) {
@@ -38,6 +40,14 @@ public class SensorValue {
         v.value = value;
         v.time = time;
         return v;
+    }
+
+    public String getSource() {
+        return source;
+    }
+
+    public void setSource(String source) {
+        this.source = source;
     }
 
     public String getId() {

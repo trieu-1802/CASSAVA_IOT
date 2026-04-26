@@ -1,7 +1,5 @@
 package com.example.demo.entity;
 
-import com.google.firebase.database.DatabaseReference;
-import com.google.firebase.database.FirebaseDatabase;
 import com.opencsv.CSVWriter;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
@@ -1421,39 +1419,6 @@ public class Field {
 
     }
 
-    /**
-     * Hàm này sẽ được gọi sau khi mô phỏng kết thúc để tải lịch sử tưới lên Firebase
-     */
-    public void uploadHistoryToFirebase() {
-        if (this.listHistory.isEmpty()) return;
-
-        try {
-            DatabaseReference ref = FirebaseDatabase.getInstance()
-                    .getReference("user")
-                    .child(this.fieldName)
-                    .child("historyIrrigation");
-
-            // 2. Xóa toàn bộ dữ liệu cũ tại nút này
-            ref.removeValue((error, reference) -> {
-                if (error == null) {
-                    System.out.println("Đã xóa lịch sử cũ thành công. Đang cập nhật dữ liệu mới...");
-
-                    // 3. Nếu có dữ liệu mới trong listHistory thì tiến hành upload
-                    if (this.listHistory != null && !this.listHistory.isEmpty()) {
-                        for (HistoryIrrigation history : this.listHistory) {
-                            // Dùng push() để tạo ID duy nhất cho mỗi bản ghi mới
-                            ref.push().setValueAsync(history);
-                        }
-                        System.out.println("Đã cập nhật " + this.listHistory.size() + " bản ghi mới.");
-                    }
-                } else {
-                    System.err.println("Lỗi khi xóa dữ liệu cũ: " + error.getMessage());
-                }
-            });
-        } catch (IllegalStateException e) {
-            // Firebase not initialized — skip silently
-        }
-    }
     public static void resetDoyStaticFields() {
         previousDoy = -1;
         doyOffset = 0;

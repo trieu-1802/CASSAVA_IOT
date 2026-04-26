@@ -79,7 +79,7 @@ public class Field {
     public Field() {}
 
     /**
-     * Constructor with default values matching Firebase CustomizedParameters defaults.
+     * Constructor with default field values.
      * Usage: Field fieldTest = new Field("fieldTest");
      */
     public Field(String name) {

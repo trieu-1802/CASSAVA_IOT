@@ -33,17 +33,25 @@ Both FE and BE must run concurrently for development. FE Axios instances read `V
 
 ```
 React SPA (5173) ──Axios──▶ Spring Boot API (8081) ──▶ MongoDB (remote)
-                                    │
-                  ┌─────────────┬───┴──────────┬───────────┐
-              MQTT weather  MQTT operation   NASA API    Firebase
-              (HiveMQ pub)  (private mosq.)  (weather)   (storage)
-                  │               │
-              sensors in     valves out / ack in
-                                  │
-                                edge (pi3)
+                                    │                       ▲
+                                    │                       │ libmongoc insert
+                                    │               edge C binaries (pi3)
+                                    │                       ▲
+                  ┌─────────────────┴───────┐               │ subscribe MQTT
+                  │                         │               │
+              MQTT operation        MQTT sensor (anomaly)   │
+              (private mosq.)       (private mosq.)         │
+                  │                         │               │
+              valves out / ack in    weather + soil readings
+                  │                         │               │
+                  └──────────────► edge (pi3) ◄─────────────┘
 ```
 
-Two distinct MQTT paths: **weather** (HiveMQ public, sensors → BE) and **operation** (private mosquitto, BE ↔ edge for irrigation commands and acks). See `deploy/MQTT.md` for the operation-layer architecture.
+Two distinct MQTT subsystems on the same private mosquitto broker:
+- **operation** — BE ↔ edge for irrigation commands/acks (`cassava/field/+/valve/+/{cmd,ack}`).
+- **sensor** — edge publishes weather + soil readings on `/sensor/weatherStation` and `field1..field4`. Persistence is owned by the **edge C binaries** (single-file `edge/edge_to_mongo_weather.c`, `edge/edge_to_mongo_soil.c`, compiled directly with `cc` on pi3) which insert directly into MongoDB; the BE listens to the same topics for **anomaly detection** (`MqttSensorListener` + `RangeCheckService`) but does not persist.
+
+See `deploy/MQTT.md` for both architectures (operation + sensor data path).
 
 Main app (`Demo1Application`) uses `@EnableCaching` and `@EnableScheduling`. `FieldSimulator.runScheduledSimulationForAllFields()` runs the crop simulation for every Mongo field twice daily at **07:00 and 17:00 `Asia/Ho_Chi_Minh`** (cron `0 0 7,17 * * *`). On-demand runs are still available via `GET /simulation/run?fieldId=X`.
 
@@ -60,11 +68,13 @@ Main app (`Demo1Application`) uses `@EnableCaching` and `@EnableScheduling`. `Fi
   - `SimulationController` (`/simulation`) — run/chart simulation
   - `UserController` (`/api/auth`) — login, register, list users
 - **service/**: Split between the root and a `Mongo/` subpackage.
-  - `service/`: `JwtService`, `MqttWeatherService` (MQTT subscriber + NASA fallback), `NasaBackupService`, `UserService`
-  - `service/Mongo/`: `FieldMongoService`, `FieldGroupService`, `FieldGroupSensorService`, `FieldSensorService`, `FieldSimulator` (crop simulation + auto irrigation history), `SensorValueService`, `IrrigationHistoryService`, `IrrigationScheduleService`, `IrrigationScheduleScheduler` (15s/30s ticks driving the schedule lifecycle for both modes), plus the `WeatherProvider` interface and its `MongoWeatherProvider` implementation
-  - **Empty placeholder** (do not confuse with real services): `service/Mongo/IrrigationService.java` is an empty class stub — no logic yet
-- **mqtt/**: Operation-layer MQTT components (see `deploy/MQTT.md`). `MqttConfig` (Paho client bean with auto-reconnect, cleanSession=false), `MqttCommandPublisher` (publishes `OperationCommand` to `cassava/field/{fieldId}/valve/{valveId}/cmd` at QoS 1), `MqttAckListener` (subscribes to `cassava/field/+/valve/+/ack`, dispatches into `IrrigationScheduleService.handleAck`), `MqttTopics` (topic constants), `OperationCommand` / `OperationAck` (JSON payload POJOs)
-- **entity/**: Two separate `Field` classes (see disambiguation below), plus `User`, `FieldSensor`, `FieldGroup`, `FieldGroupSensor`, `SensorValue`, `FieldSimulationResult`, `IrrigationHistory`, `IrrigationSchedule`, `Disease`; some leftover Firebase-era DTOs/entities still live in `entity/` (e.g. `FieldDTO`, `CustomizedParameters`, `Humidity`, `MeasuredData`, `WeatherRequest`, `ChartData`, `HistoryIrrigation`) because the simulation model `entity/Field.java` still depends on several of them
+  - `service/`: `JwtService`, `UserService`
+  - `service/Mongo/`: `FieldMongoService`, `FieldGroupService`, `FieldGroupSensorService`, `FieldSensorService`, `FieldSimulator` (crop simulation + auto irrigation history), `SensorValueService`, `IrrigationHistoryService`, `IrrigationScheduleService`, `IrrigationScheduleScheduler` (15s/30s ticks driving the schedule lifecycle for both modes)
+  - `service/anomaly/`: `RangeCheckService` (Tier-1 physical-range validation, thresholds via `anomaly.range.*` properties) + `RangeCheckResult`. Tiers 2–4 (Z-score, Seasonal Z-score, ML imputation per `Anomaly_detection.docx`) are not yet implemented.
+- **mqtt/**: Both MQTT subsystems share a single Paho client bean (`MqttConfig.operationMqttClient()`) connected to the private mosquitto broker. See `deploy/MQTT.md`.
+  - **Operation**: `MqttCommandPublisher` (publishes `OperationCommand` to `cassava/field/{fieldId}/valve/{valveId}/cmd` at QoS 1), `MqttAckListener` (subscribes to `cassava/field/+/valve/+/ack`, dispatches into `IrrigationScheduleService.handleAck`), `MqttTopics` (topic constants), `OperationCommand` / `OperationAck` (JSON POJOs).
+  - **Sensor (anomaly)**: `MqttSensorListener` subscribes to `mqtt.sensor.weather-topic` + each `mqtt.sensor.soil-topics`, parses the `key value;` payload, runs each reading through `RangeCheckService`, and logs `[sensor] OK` or `[sensor] RANGE_FAIL`. **Does not persist** — the edge C binaries own `sensor_value` writes. `MqttSensorTopics` holds the `t/h/rad/rai/w → temperature/...` key map.
+- **entity/**: Two separate `Field` classes (see disambiguation below), plus `User`, `FieldSensor`, `FieldGroup`, `FieldGroupSensor`, `SensorValue`, `FieldSimulationResult`, `IrrigationHistory`, `IrrigationSchedule`. A few simulation-only DTOs still live at the top level — `HistoryIrrigation` (used by `FieldSimulator` to convert in-memory irrigation events into `IrrigationHistory` Mongo docs), `MeasuredData` and `WeatherRequest` (referenced inside `entity/Field.java` only — both are in dead branches and could be removed with a small refactor)
 - **repositories/**: Spring Data MongoDB repos under `repositories/mongo/` — includes `FieldGroupRepository`, `FieldGroupSensorRepository`, `FieldSimulationResultRepository`, `IrrigationHistoryRepository`, `IrrigationScheduleRepository`
 
 **Field ↔ Group constraint**: `FieldMongoService.create()` rejects a field unless `groupId` references an existing `field_group`. Every field belongs to exactly one group; groups are the unit of weather-station sharing.
@@ -83,7 +93,7 @@ Main app (`Demo1Application`) uses `@EnableCaching` and `@EnableScheduling`. `Fi
 Both modes share the same controller, repo, and FE tab — the divergence is contained inside `IrrigationScheduleScheduler`. Full architecture, payload schemas, and edge subscriber spec live in `deploy/MQTT.md`.
 - **Jwt/**: `JwtUtils` (token gen/validation), `JwtAuthFilter` (request filter)
 - **config/**: `SecurityConfig` (CORS + auth rules), `WebConfig`
-- **firebase/**: Firebase Realtime Database integration, `CorsConfig` (see CORS note below)
+- **firebase/**: legacy directory name — only `CorsConfig` remains (see CORS note below); the Firebase integration has been removed
 
 Auth flow: JWT with 24h expiry (HS512). Roles are ADMIN and USER. Public endpoints: `/api/auth/**` only; `/mongo/**` and `/simulation/**` are permitAll. Token injected via `JwtAuthFilter` in the Spring Security filter chain.
 
@@ -99,16 +109,13 @@ React 19 + Vite, Ant Design v6, React Router v7, Recharts for charts.
   - `FieldGroups/`: `FieldGroupList` + `components/FieldGroupModal` — CRUD for groups that share a weather station
   - `Weather/`: `WeatherGroupList` (group picker), `WeatherDashboard` (per-group `/weather/:groupId`), `WeatherDetail` (per-sensor `/weather/detail/:sensorId`) — weather is accessed via the group, not an individual field
   - `Users/` (UserList)
-- **services/**: Four Axios instances, each with `baseURL` built from `import.meta.env.VITE_API_BASE` (fallback `http://localhost:8081`), plus one empty stub:
+- **services/**: Four Axios instances, each with `baseURL` built from `import.meta.env.VITE_API_BASE` (fallback `http://localhost:8081`):
   - `api.js` → `${VITE_API_BASE}` — injects `Authorization: Bearer <token>` from `localStorage.user.accessToken`
   - `authService.js` → `${VITE_API_BASE}/api` — same `Authorization: Bearer` interceptor
   - `fieldService.js` → `${VITE_API_BASE}/mongo` — JWT interceptor attached; endpoints are `permitAll` in `SecurityConfig` but the token is still sent
   - `groupService.js` → `${VITE_API_BASE}/mongo/field-group`
-  - `weatherService.js` — empty stub
 - **components/**: `Layout/MainLayout` only (responsive sidebar — `Drawer` on mobile <768px, collapsible `Sider` on desktop). Feature-specific components live under their `pages/<feature>/components/` folder.
-- **utils/**: `exportExcel.js`, `formatters.js` — **both are empty stubs**
-- **contexts/**: `AuthContext.jsx` exists but is **empty/unused**
-- **routes/**: `PrivateRoute.jsx` and `AppRoutes.jsx` exist but are **empty/unused** — no actual route protection; routing is defined inline in `App.jsx` (e.g. `/fields`, `/fields/:id`, `/fields/:fieldId/soil-sensor`, `/field-groups`, `/weather`, `/weather/:groupId`)
+- Routing is defined inline in `App.jsx` (e.g. `/fields`, `/fields/:id`, `/fields/:fieldId/soil-sensor`, `/field-groups`, `/weather`, `/weather/:groupId`) — no separate route guards.
 
 Auth state is managed entirely via `localStorage` (key: `user` with `accessToken` and `isAdmin` fields). No Redux/Zustand/Context is used.
 
@@ -121,20 +128,26 @@ These are completely separate classes. The simulation model is NOT the MongoDB d
 
 ### IoT Data Flow
 
-MQTT broker (HiveMQ `broker.hivemq.com:1883`) → topic `/sensor/weatherStation` → `MqttWeatherService` validates and persists JSON sensor readings to `sensor_value` collection. Falls back to NASA Power API if MQTT data is invalid, with a 10-minute cooldown between NASA calls.
+Persistence and validation are split across two processes connecting to the same private mosquitto broker:
 
-Sensor ID mapping: `t`→temperature, `h`→relativeHumidity, `rai`→rain, `rad`→radiation, `w`→wind, plus soil moisture sensors `humidity30` (30cm depth) and `humidity60` (60cm depth). When a field is created, `FieldSensorService` auto-initializes the 7 default sensors for it.
+1. **Edge C binaries (`edge/edge_to_mongo_weather.c`, `edge/edge_to_mongo_soil.c`)** — each is a self-contained single `.c` file with all settings hardcoded in a `CONFIG` block at the top (Mongo URI, MQTT broker + creds, `default_group_id`, weather/soil topics, and the `SOIL_FIELDS` topic→`fieldId` table). Pi3 compiles each directly with `cc -O2 <file>.c $(pkg-config --cflags --libs libmongoc-1.0) -lpaho-mqtt3c`. They subscribe to `/sensor/weatherStation` (weather) and `field1..4` (per-field soil moisture), parse the `key value;key value;...` payload, and insert into MongoDB `sensor_value` via `libmongoc`. Weather rows are keyed by `groupId` only (no `fieldId`); soil rows are keyed by `fieldId` only (no `groupId`) — the field's group is derivable via the `field→group` lookup. The `fieldId` for soil is resolved from the `SOIL_FIELDS` table in `edge_to_mongo_soil.c`. Each row carries `source: "mqtt"`. To add a soil field or rotate creds, edit the constants in the `.c` file and recompile. Setup + run notes live in `edge/README.md`; deploy/systemd in `deploy/DEPLOY.md` §6.
+2. **Edge pump controller (`edge/dk_bom_mqtt.c`)** — same standalone-C style, links cJSON from the repo root. Subscribes `cassava/field/+/valve/+/cmd`, parses JSON `OperationCommand`, drives the relay (publishes `1`/`0` to `Pump<valveId>` per the in-source `RELAYS` table), and replies with `OperationAck` on `…/ack`. Spawns one detached pthread per command so long irrigations don't block the broker callback.
+3. **BE (`mqtt/MqttSensorListener`)** — subscribes to the same topics on the same broker, parses the same payload, and runs each reading through `service/anomaly/RangeCheckService` (Tier-1 physical-range check). Anomalies are logged (`WARN [sensor] RANGE_FAIL …`); valid readings produce `INFO [sensor] OK …`. **The BE does not write `sensor_value`** — that is solely the edge C job.
 
-Validation ranges: temp -10–60°C, humidity 0–100%, rain 0–500mm, wind 0–50m/s. Values outside these ranges trigger the NASA backup fallback.
+Sensor ID mapping (kept in sync across the `WEATHER_MAP` table in `edge/edge_to_mongo_weather.c` and `MqttSensorTopics.resolveSensorId` on the BE): `t→temperature`, `h→relativeHumidity`, `rai→rain`, `rad→radiation`, `w→wind`, plus soil keys `humidity30` (30cm) and `humidity60` (60cm) which pass through verbatim.
+
+Range Check thresholds are now config-driven (`anomaly.range.<sensorId>.{min,max}` in `application*.properties`) instead of hardcoded. Defaults match the previous inline rules: temp [-10,60], relativeHumidity [0,100], rain [0,500], radiation [0,1500], wind [0,50], humidity30/humidity60 [0,100]. Sensors with no configured threshold pass through (no opinion).
+
+Future tiers (Z-score, Seasonal Z-score, ML imputation) per `Anomaly_detection.docx` are out of scope for the current code — the user will design them on top of `RangeCheckService` later.
 
 Note: the sensor formerly named `humidity` was renamed to `relativeHumidity` — check for stale references if touching sensor code.
 
-**Runtime artifact**: The Eclipse Paho MQTT client writes a persistence directory (e.g. `paho<id>-tcpbrokerhivemqcom1883/`) into the repo root when the backend runs. It is not source — ignore it and it should be gitignored.
+**Runtime artifact**: The Eclipse Paho MQTT client writes a persistence directory (e.g. `paho<id>-tcp...1883/`) into the repo root when the backend runs. It is not source — already gitignored as `paho*/`.
 
 ### Crop Simulation Pipeline
 
 1. `GET /simulation/run?fieldId=X` triggers simulation
-2. `FieldSimulator` fetches combined sensor data via `SensorValueService.getCombinedValues()`, creates a `Field` object (from `entity/Field.java`), loads weather data through the `WeatherProvider` interface (`service/Mongo/WeatherProvider.java`, currently implemented by `MongoWeatherProvider` reading from the `sensor_value` collection), runs the model, and saves results to MongoDB
+2. `FieldSimulator` fetches combined hourly sensor data via `SensorValueService.getCombinedValues(groupId, ...)` (a Mongo aggregation that buckets `sensor_value` rows by hour and averages per sensorId), feeds the resulting CSV-style strings into a `Field` object (from `entity/Field.java`) via `loadAllWeatherDataFromMongo()`, runs the model, and saves results to MongoDB
 3. If `autoIrrigation` is true, automatically generates `IrrigationHistory` records
 4. `GET /simulation/chart?fieldId=X` returns chart data (labels, yield, irrigation, leafArea, labileCarbon)
 5. Results are replaced on each run (`deleteByFieldId` then `saveAll`)
@@ -145,10 +158,7 @@ Note: the sensor formerly named `humidity` was renamed to `relativeHumidity` —
 ### Key External Dependencies
 
 - **MongoDB**: Remote instance at `112.137.129.218:27017`, database `iot_agriculture`
-- **Firebase**: Service account key looked up at `D:\DATN\serviceAccountKey.json` (Windows dev) and `/opt/cassava/serviceAccountKey.json` (Linux prod). `FirebaseInitialization` returns `null` gracefully if the file is missing; call sites in `NasaBackupService` and `entity/Field.java` skip uploads when the bean is null rather than throwing.
-- **MQTT (weather)**: HiveMQ public broker — sensor ingest only (`MqttWeatherService`)
-- **MQTT (operation)**: Private mosquitto broker — irrigation commands & acks. URL configurable via `mqtt.operation.broker-url` (dev: `tcp://112.137.129.218:1883`; prod: `tcp://127.0.0.1:1883`, mosquitto runs on the same host as the BE). Auto-reconnect enabled — BE starts even if the broker is offline.
-- **APIs**: NASA Power (no key), OpenWeather (key in `MqttWeatherService`)
+- **MQTT (single private mosquitto broker)**: serves both the operation subsystem (irrigation cmd/ack) and the sensor subsystem (weather + soil). URL configurable via `mqtt.operation.broker-url` (dev: `tcp://112.137.129.218:1883`; prod: `tcp://127.0.0.1:1883`, mosquitto runs on the same host as the BE). Auto-reconnect enabled — BE starts even if the broker is offline. Edge auth: `libe / 123456` (set via `mqtt.operation.username/password` in prod profile).
 
 ## Production Deployment
 
@@ -183,4 +193,5 @@ Update flow: FE-only changes → rebuild + rsync `dist/` to `/opt/cassava/webroo
 - Java 17 required
 - Frontend API calls use four separate Axios instances — check which one matches the endpoint prefix before adding new API calls
 - MongoDB collections: `field`, `field_group`, `field_group_sensor`, `field_sensor`, `sensor_value`, `simulation_result`, `irrigation_history`, `irrigation_schedule`, `users`, `diseases`
-- Two MQTT subsystems must not be conflated: `MqttWeatherService` (sensor ingest, HiveMQ public) and the `mqtt/` package (irrigation commands, private mosquitto). They use independent Paho clients and brokers.
+- Both MQTT subsystems (operation + sensor anomaly) share a single Paho client bean `MqttConfig.operationMqttClient()` against the private mosquitto broker. Edge Python scripts open their own client connection to the same broker for `sensor_value` persistence.
+- Sensor persistence is owned by the **edge C binaries** (`edge/edge_to_mongo_weather.c` + `edge/edge_to_mongo_soil.c`); the Java BE never writes `sensor_value` rows. If you find Java code that does, it's drift — investigate before adding more.

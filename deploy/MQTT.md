@@ -4,10 +4,12 @@ Architecture, message contracts, and operational runbook for the **operation
 MQTT subsystem** that ties Cassava BE to edge controllers (e.g. pi3) so that
 manual irrigation schedules trigger physical valves.
 
-> ⚠️ Not the same as the **weather MQTT subscription** in `MqttWeatherService`
-> (HiveMQ public broker, topic `/sensor/weatherStation`). The operation layer
-> is a separate Paho client, separate broker, and only carries command/ack
-> traffic.
+> The same private mosquitto broker also carries the **sensor data path**
+> (weather + soil moisture readings). Persistence to MongoDB is owned by the
+> standalone edge C binaries in `edge/` (`edge_to_mongo_weather`,
+> `edge_to_mongo_soil`), each compiled directly with `cc` on pi3 — no
+> Makefile, no shared helpers, all settings hardcoded inside the `.c` file.
+> The BE only listens on those topics for anomaly detection. See §11 below.
 
 ---
 
@@ -290,8 +292,9 @@ mosquitto_pub -h 127.0.0.1 -t 'cassava/test' -m 'hello'
 If you want auth (recommended once the edge identity is settled):
 
 ```bash
-sudo mosquitto_passwd -c /etc/mosquitto/passwd cassava-be
-sudo mosquitto_passwd    /etc/mosquitto/passwd cassava-edge
+# The edge sensors today already authenticate with libe/123456 — match that
+# so the existing firmware doesn't need re-flashing.
+sudo mosquitto_passwd -c /etc/mosquitto/passwd libe   # set 123456 when prompted
 
 # /etc/mosquitto/conf.d/auth.conf
 listener 1883
@@ -301,12 +304,18 @@ password_file /etc/mosquitto/passwd
 sudo systemctl restart mosquitto
 ```
 
-…and add the credentials to `application-prod.properties`:
+The same `libe / 123456` credentials are already wired into the prod profile
+(`cassavaBE/src/main/resources/application-prod.properties`):
 
 ```
-mqtt.operation.username=cassava-be
-mqtt.operation.password=...
+mqtt.operation.username=libe
+mqtt.operation.password=123456
 ```
+
+…and into the `MQTT_USERNAME` / `MQTT_PASSWORD` constants hardcoded at the
+top of `edge/edge_to_mongo_weather.c` + `edge/edge_to_mongo_soil.c`.
+Both subsystems (operation cmd/ack + sensor weather/soil) share this single
+account because the broker is single-tenant for now.
 
 ACLs (optional, more granular): use `acl_file` in `/etc/mosquitto/conf.d/`
 to scope each user to their own topic prefix. Out of scope for the initial
@@ -375,3 +384,142 @@ sudo journalctl -u cassava-be -f | grep -E 'MQTT|Schedule'
 - **Reissue of `NO_ACK` rows** — once a row hits `NO_ACK`, a human (via FE)
   decides whether to re-schedule. There is no automatic retry by design;
   retry semantics for physical actuation are too risky to default-on.
+
+---
+
+## 11. Sensor Data Path
+
+The same mosquitto broker carries weather and soil-moisture readings from
+the edge. **Two independent consumers** subscribe to the same topics with
+different responsibilities:
+
+```
+                    ┌─────────────────────────┐
+                    │   Edge sensors (pi3)     │
+                    │   t/h/rad/rai/w  →  /sensor/weatherStation
+                    │   humidity30/60  →  field1..field4
+                    └────────────┬────────────┘
+                                 │ publish (key value;key value;)
+                                 ▼
+                    ┌─────────────────────────┐
+                    │   Mosquitto broker       │
+                    │   libe / 123456 (auth)   │
+                    └──┬──────────────────┬───┘
+                       │                  │
+        subscribe ─────┘                  └───── subscribe
+                       │                  │
+                       ▼                  ▼
+        ┌──────────────────────┐  ┌──────────────────────────┐
+        │ edge_to_mongo_*       │  │ MqttSensorListener (BE)   │
+        │ C binaries on pi3     │  │ + RangeCheckService       │
+        │  libmongoc insert ────┼──▶  logs OK / RANGE_FAIL     │
+        └──────────────────────┘  └──────────────────────────┘
+                       │
+                       ▼
+                 MongoDB sensor_value
+                 (source: "mqtt")
+```
+
+### 11.1 Topics + payload
+
+| Topic                       | Direction      | Payload                                      | Persisted by           | Validated by         |
+|-----------------------------|----------------|----------------------------------------------|------------------------|----------------------|
+| `/sensor/weatherStation`    | edge → broker  | `t 25.3;h 60;rad 800;rai 0;w 1.2`            | `edge_to_mongo_weather`| `MqttSensorListener` |
+| `field1` … `field4`         | edge → broker  | `humidity30 32.1;humidity60 28.5`            | `edge_to_mongo_soil`   | `MqttSensorListener` |
+
+Both subsystems use the same plain-text format: `key value` pairs separated
+by `;`. Weather keys are abbreviated (`t/h/rad/rai/w`) and mapped to
+canonical sensor IDs on both sides:
+
+- Edge C: the `WEATHER_MAP` table at the top of `edge/edge_to_mongo_weather.c`
+- BE Java: `mqtt.MqttSensorTopics.resolveSensorId`
+
+Soil keys (`humidity30`, `humidity60`, …) pass through verbatim.
+
+### 11.2 Persistence (edge C)
+
+Pi3 runs the C binaries `edge/edge_to_mongo_weather` + `edge/edge_to_mongo_soil`.
+Each `.c` file is self-contained — compiled directly with `cc` against
+`libpaho-mqtt3c` + `libmongoc-1.0`, no Makefile, no shared helpers. Each
+writes `sensor_value` documents:
+
+```jsonc
+// Weather row (edge_to_mongo_weather): groupId only.
+{
+  "groupId":  "<DEFAULT_GROUP_ID>",
+  "sensorId": "temperature" | "relativeHumidity" | "rain" | "radiation" | "wind",
+  "value":    25.3,
+  "time":     ISODate("..."),
+  "source":   "mqtt"
+}
+
+// Soil row (edge_to_mongo_soil): fieldId only — group is derivable via field→group.
+{
+  "fieldId":  "<from SOIL_FIELDS table>",
+  "sensorId": "humidity30" | "humidity60" | ...,
+  "value":    32.1,
+  "time":     ISODate("..."),
+  "source":   "mqtt"
+}
+```
+
+Configuration is hardcoded in the `CONFIG` block at the top of each `.c`
+file (Mongo URI, MQTT creds). `edge_to_mongo_weather.c` additionally has
+`DEFAULT_GROUP_ID`; `edge_to_mongo_soil.c` has the `SOIL_FIELDS` table
+mapping topic → `fieldId`. Edit and recompile to change. Build + run
+commands live in `edge/README.md`.
+
+### 11.3 Validation (BE Java)
+
+`MqttSensorListener` (`@PostConstruct`) reuses the existing operation
+`MqttClient` bean to subscribe to:
+
+- `mqtt.sensor.weather-topic` (default `/sensor/weatherStation`)
+- each entry of `mqtt.sensor.soil-topics` (default `field1,field2,field3,field4,field2.1,field4.1` — listening is harmless even if the edge C does not publish on the `.1` topics today)
+
+For every `(sensorId, value)` pair it calls `RangeCheckService.check(...)`,
+which returns valid/invalid based on per-sensor thresholds:
+
+| sensorId           | min  | max   | property prefix                  |
+|--------------------|------|-------|----------------------------------|
+| `temperature`      | -10  | 60    | `anomaly.range.temperature.*`    |
+| `relativeHumidity` | 0    | 100   | `anomaly.range.relativeHumidity.*` |
+| `rain`             | 0    | 500   | `anomaly.range.rain.*`           |
+| `radiation`        | 0    | 1500  | `anomaly.range.radiation.*`      |
+| `wind`             | 0    | 50    | `anomaly.range.wind.*`           |
+| `humidity30`       | 0    | 100   | `anomaly.range.humidity30.*`     |
+| `humidity60`       | 0    | 100   | `anomaly.range.humidity60.*`     |
+
+Sensors with no configured threshold pass through (no opinion). The
+listener does **not** persist anything — it only logs.
+
+Tier 2 (Z-score), Tier 3 (Seasonal Z-score), and Tier 4 (ML imputation via
+Python FastAPI) per `Anomaly_detection.docx` are out of scope for the
+current code. They can be added as additional services that consume
+the same `(sensorId, value)` stream — a pipeline interface will be designed
+when those tiers land.
+
+### 11.4 Smoke test
+
+```bash
+# Publish a clean reading
+mosquitto_pub -h localhost -t /sensor/weatherStation \
+  -m "t 25.3;h 60;rad 800;rai 0;w 1.2" -u libe -P 123456
+
+# BE log expectation
+# INFO  [sensor] OK topic=/sensor/weatherStation sensorId=temperature value=25.3
+# (one line per parsed key)
+
+# Mongo expectation
+mongosh "$MONGO_URI" --eval \
+  'db.sensor_value.find({groupId:"<default_group_id>"}).sort({time:-1}).limit(5)'
+# 5 rows, each with source:"mqtt"
+
+# Now publish an anomaly
+mosquitto_pub -h localhost -t /sensor/weatherStation \
+  -m "t 999;h 60;rad 800;rai 0;w 1.2" -u libe -P 123456
+
+# BE log expectation
+# WARN  [sensor] RANGE_FAIL topic=/sensor/weatherStation sensorId=temperature value=999.0 min=-10.0 max=60.0
+# Mongo: row still inserted by edge_to_mongo_weather (source:"mqtt"); BE only logs.
+```
