@@ -396,7 +396,7 @@ different responsibilities:
 ```
                     ┌─────────────────────────┐
                     │   Edge sensors (pi3)     │
-                    │   t/h/rad/rai/w  →  /sensor/weatherStation
+                    │   t/h/rad/rai/w  →  /sensor/weatherStation2
                     │   humidity30/60  →  field1..field4
                     └────────────┬────────────┘
                                  │ publish (key value;key value;)
@@ -424,7 +424,7 @@ different responsibilities:
 
 | Topic                       | Direction      | Payload                                      | Persisted by           | Validated by         |
 |-----------------------------|----------------|----------------------------------------------|------------------------|----------------------|
-| `/sensor/weatherStation`    | edge → broker  | `t 25.3;h 60;rad 800;rai 0;w 1.2`            | `edge_to_mongo_weather`| `MqttSensorListener` |
+| `/sensor/weatherStation2`    | edge → broker  | `t 25.3;h 60;rad 800;rai 0;w 1.2`            | `edge_to_mongo_weather`| `MqttSensorListener` |
 | `field1` … `field4`         | edge → broker  | `humidity30 32.1;humidity60 28.5`            | `edge_to_mongo_soil`   | `MqttSensorListener` |
 
 Both subsystems use the same plain-text format: `key value` pairs separated
@@ -474,7 +474,7 @@ commands live in `edge/README.md`.
 `MqttSensorListener` (`@PostConstruct`) reuses the existing operation
 `MqttClient` bean to subscribe to:
 
-- `mqtt.sensor.weather-topic` (default `/sensor/weatherStation`)
+- `mqtt.sensor.weather-topic` (default `/sensor/weatherStation2`)
 - each entry of `mqtt.sensor.soil-topics` (default `field1,field2,field3,field4,field2.1,field4.1` — listening is harmless even if the edge C does not publish on the `.1` topics today)
 
 For every `(sensorId, value)` pair it calls `RangeCheckService.check(...)`,
@@ -503,11 +503,11 @@ when those tiers land.
 
 ```bash
 # Publish a clean reading
-mosquitto_pub -h localhost -t /sensor/weatherStation \
+mosquitto_pub -h localhost -t /sensor/weatherStation2 \
   -m "t 25.3;h 60;rad 800;rai 0;w 1.2" -u libe -P 123456
 
 # BE log expectation
-# INFO  [sensor] OK topic=/sensor/weatherStation sensorId=temperature value=25.3
+# INFO  [sensor] OK topic=/sensor/weatherStation2 sensorId=temperature value=25.3
 # (one line per parsed key)
 
 # Mongo expectation
@@ -516,10 +516,10 @@ mongosh "$MONGO_URI" --eval \
 # 5 rows, each with source:"mqtt"
 
 # Now publish an anomaly
-mosquitto_pub -h localhost -t /sensor/weatherStation \
+mosquitto_pub -h localhost -t /sensor/weatherStation2 \
   -m "t 999;h 60;rad 800;rai 0;w 1.2" -u libe -P 123456
 
 # BE log expectation
-# WARN  [sensor] RANGE_FAIL topic=/sensor/weatherStation sensorId=temperature value=999.0 min=-10.0 max=60.0
+# WARN  [sensor] RANGE_FAIL topic=/sensor/weatherStation2 sensorId=temperature value=999.0 min=-10.0 max=60.0
 # Mongo: row still inserted by edge_to_mongo_weather (source:"mqtt"); BE only logs.
 ```

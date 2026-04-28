@@ -1,6 +1,6 @@
 // src/pages/Fields/FieldDetail/IrrigationTab.jsx
 import React, { useEffect, useState } from 'react';
-import { Card, Typography, Spin, Empty, message } from 'antd';
+import { Card, Typography, Spin, Empty, DatePicker, Space, message } from 'antd';
 import { LoadingOutlined } from '@ant-design/icons';
 import {
   LineChart,
@@ -15,6 +15,7 @@ import {
 import api from '../../../services/api';
 
 const { Title, Text } = Typography;
+const { RangePicker } = DatePicker;
 
 const SOIL_SERIES = [
   { id: 'humidity30', label: 'Độ ẩm đất 30cm', color: '#13c2c2' },
@@ -34,10 +35,24 @@ const formatFullTime = (iso) =>
 const IrrigationTab = ({ fieldId }) => {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [dateRange, setDateRange] = useState(null);
 
   useEffect(() => {
     if (!fieldId) return;
     let cancelled = false;
+
+    const resolveRange = (latest) => {
+      if (dateRange && dateRange[0] && dateRange[1]) {
+        return {
+          startCutoff: dateRange[0].startOf('day').valueOf(),
+          endCutoff: dateRange[1].endOf('day').valueOf(),
+        };
+      }
+      return {
+        startCutoff: latest > 0 ? latest - 24 * 60 * 60 * 1000 : 0,
+        endCutoff: latest,
+      };
+    };
 
     const fetchSoilHumidity = async () => {
       setLoading(true);
@@ -56,14 +71,14 @@ const IrrigationTab = ({ fieldId }) => {
           ),
           0
         );
-        const cutoff = latest > 0 ? latest - 24 * 60 * 60 * 1000 : 0;
+        const { startCutoff, endCutoff } = resolveRange(latest);
 
         const buckets = new Map();
         responses.forEach((res, idx) => {
           const key = SOIL_SERIES[idx].id;
           (res.data || []).forEach((item) => {
             const t = new Date(item.time).getTime();
-            if (t < cutoff) return;
+            if (t < startCutoff || t > endCutoff) return;
             if (!buckets.has(t)) {
               buckets.set(t, {
                 t,
@@ -87,13 +102,23 @@ const IrrigationTab = ({ fieldId }) => {
 
     fetchSoilHumidity();
     return () => { cancelled = true; };
-  }, [fieldId]);
+  }, [fieldId, dateRange]);
 
   return (
     <div style={{ padding: '20px 0' }}>
+      <Space style={{ marginBottom: 16, width: '100%', justifyContent: 'flex-end' }}>
+        <Text strong>Chọn thời gian:</Text>
+        <RangePicker
+          value={dateRange}
+          onChange={(dates) => setDateRange(dates)}
+          format="DD/MM/YYYY"
+          placeholder={['Từ ngày', 'Đến ngày']}
+          allowClear
+        />
+      </Space>
       <Card
         title={<Title level={4} style={{ margin: 0 }}>Biểu đồ trực quan: Độ ẩm đất (30cm & 60cm)</Title>}
-        extra={<Text type="secondary">Dữ liệu 24h qua • Nguồn: cánh đồng</Text>}
+        extra={<Text type="secondary">{dateRange ? 'Dữ liệu tùy chỉnh' : 'Dữ liệu 24h qua'} • Nguồn: cánh đồng</Text>}
       >
         {loading ? (
           <div style={{ height: 400, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>

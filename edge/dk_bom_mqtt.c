@@ -6,8 +6,8 @@
  *   - actuate    publish "1" / "0" to Pump<valveId> (legacy GPIO bridge)
  *   - publish    cassava/field/<fieldId>/valve/<valveId>/ack (JSON OperationAck)
  *
- * Build (cJSON.{c,h} live at the repo root, one level above edge/):
- *   cc -O2 dk_bom_mqtt.c ../cJSON.c -o dk_bom_mqtt \
+ * Build (place cJSON.{c,h} alongside this file):
+ *   cc -O2 dk_bom_mqtt.c cJSON.c -o dk_bom_mqtt \
  *      -lpaho-mqtt3c -lpthread
  *
  * Deps (Debian / Raspberry Pi OS):
@@ -18,7 +18,7 @@
  */
 
 #include <MQTTClient.h>
-#include "../cJSON.h"
+#include "cJSON.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -263,9 +263,6 @@ int main(void) {
     opts.cleansession       = 1;
     opts.username           = MQTT_USERNAME;
     opts.password           = MQTT_PASSWORD;
-    opts.automaticReconnect = 1;
-    opts.minRetryInterval   = 2;
-    opts.maxRetryInterval   = 60;
 
     int rc = MQTTClient_connect(g_mqtt, &opts);
     if (rc != MQTTCLIENT_SUCCESS) {

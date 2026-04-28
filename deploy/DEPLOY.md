@@ -248,7 +248,7 @@ sudo systemctl status cassava-edge-weather cassava-edge-soil
 
 ```bash
 # Publish test message (đổi user/pass theo MQTT_USERNAME/MQTT_PASSWORD trong .c)
-mosquitto_pub -h <broker_host> -t /sensor/weatherStation \
+mosquitto_pub -h <broker_host> -t /sensor/weatherStation2 \
   -m "t 25.3;h 60;rad 800;rai 0;w 1.2" -u <user> -P <pass>
 
 # Kiểm tra Mongo có 5 row mới
@@ -259,7 +259,7 @@ mongosh "mongodb://admin:uet%402026@112.137.129.218:27017/iot_agriculture?authSo
 tail -f /var/log/cassava/edge-weather.log
 ```
 
-Log thành công: `[edge:weather] /sensor/weatherStation inserted 5 row(s) (payload: ...)`.
+Log thành công: `[edge:weather] /sensor/weatherStation2 inserted 5 row(s) (payload: ...)`.
 
 
 ---

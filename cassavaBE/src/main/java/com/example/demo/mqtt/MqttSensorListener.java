@@ -21,7 +21,7 @@ public class MqttSensorListener {
     @Autowired
     private RangeCheckService rangeCheck;
 
-    @Value("${mqtt.sensor.weather-topic:/sensor/weatherStation}")
+    @Value("${mqtt.sensor.weather-topic:/sensor/weatherStation2}")
     private String weatherTopic;
 
     @Value("${mqtt.sensor.soil-topics:field1,field2,field3,field4,field2.1,field4.1}")

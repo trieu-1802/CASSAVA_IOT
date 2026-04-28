@@ -717,8 +717,9 @@ public class Field {
         double relativeHumidity = Double.parseDouble(_weatherData.get(n).get(iRH).toString());
         double wind = Double.parseDouble(_weatherData.get(n).get(iWind).toString());
 
-        // tính ppfd
-        double ppfd = radiation * 2.15;
+        // radiation đầu vào tính theo MJ/m²/h (sensor publish "rad" với đơn vị MJ/h).
+        // PPFD (μmol/m²/s) = (W/m²) × 2.15; 1 MJ/m²/h ≈ 277.78 W/m² ⇒ hệ số 597.22.
+        double ppfd = radiation * 597.22;
         double et0 = 24 * hourlyET(temp, radiation, relativeHumidity, wind, doy, 21.0075, 105.5416, 16, 105.5416, 2.5);
 
         List<Double> YR = new ArrayList<>();
@@ -1250,7 +1251,8 @@ public class Field {
         final double hours = (doy % 1) * 24;
         final double tempK = tempC + 273.16;
 
-        final double Rs = radiation * 3600 / 1e+06;
+        // radiation đã ở đơn vị MJ/m²/h (sensor "rad"), Rs trong công thức ET cũng là MJ/m²/h.
+        final double Rs = radiation;
         final double P = 101.3 *
                 Math.pow((293 - 0.0065 * elevation) / 293, 5.256);
         final double psi = 0.000665 * P;

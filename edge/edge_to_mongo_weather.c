@@ -1,6 +1,6 @@
 /* edge_to_mongo_weather.c — standalone subscriber for the weather station MQTT
  * topic; inserts each reading into MongoDB sensor_value as
- * { groupId, sensorId, value, time, source }.
+ * { groupId, sensorId, value, time }.
  *
  * Build:
  *   cc -O2 edge_to_mongo_weather.c -o edge_to_mongo_weather \
@@ -109,7 +109,6 @@ static int insert_reading(const char *sensor_id, double value, int64_t t_ms) {
     BSON_APPEND_UTF8(doc, "sensorId", sensor_id);
     BSON_APPEND_DOUBLE(doc, "value",  value);
     BSON_APPEND_DATE_TIME(doc, "time", t_ms);
-    BSON_APPEND_UTF8(doc, "source",   "mqtt");
 
     bson_error_t err;
     bool ok = mongoc_collection_insert_one(g_coll, doc, NULL, NULL, &err);

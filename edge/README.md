@@ -20,7 +20,7 @@ the file. Edit the `CONFIG` block in the source, recompile, run.
 
 | File | Role |
 |------|------|
-| `edge_to_mongo_weather.c` | Subscriber for `/sensor/weatherStation`, inserts into `sensor_value`. |
+| `edge_to_mongo_weather.c` | Subscriber for `/sensor/weatherStation2`, inserts into `sensor_value`. |
 | `edge_to_mongo_soil.c`    | Subscriber for `field1..field4`, inserts into `sensor_value` with `fieldId`. |
 | `dk_bom_mqtt.c`           | Subscriber for `cassava/field/+/valve/+/cmd`, actuates `Pump<valveId>`, publishes JSON ack on `…/ack`. |
 
@@ -37,8 +37,8 @@ cc -O2 edge_to_mongo_weather.c -o edge_to_mongo_weather \
 cc -O2 edge_to_mongo_soil.c -o edge_to_mongo_soil \
    $(pkg-config --cflags --libs libmongoc-1.0) -lpaho-mqtt3c
 
-# Pump controller (cJSON from repo root + paho + pthread)
-cc -O2 dk_bom_mqtt.c ../cJSON.c -o dk_bom_mqtt \
+# Pump controller (place cJSON.{c,h} alongside dk_bom_mqtt.c, then)
+cc -O2 dk_bom_mqtt.c cJSON.c -o dk_bom_mqtt \
    -lpaho-mqtt3c -lpthread
 ```
 
@@ -105,7 +105,7 @@ On prod, run as systemd units (one per process). See `deploy/DEPLOY.md` §6.
 
 ```bash
 # Publish a fake weather reading
-mosquitto_pub -h localhost -t /sensor/weatherStation \
+mosquitto_pub -h localhost -t /sensor/weatherStation2 \
   -m "t 25.3;h 60;rad 800;rai 0;w 1.2" -u libe -P 123456
 
 # Check Mongo
@@ -113,7 +113,7 @@ mongosh "mongodb://admin:uet%402026@112.137.129.218:27017/iot_agriculture?authSo
   --eval 'db.sensor_value.find({source:"mqtt"}).sort({time:-1}).limit(5)'
 ```
 
-A successful run logs `[edge:weather] /sensor/weatherStation inserted 5 row(s) (...)`.
+A successful run logs `[edge:weather] /sensor/weatherStation2 inserted 5 row(s) (...)`.
 
 ## Verify pump controller
 
@@ -158,7 +158,7 @@ mosquitto_sub -h localhost -t '$SYS/broker/connection/cassava-prod/state' -v
 What flows through:
 - `cassava/field/+/valve/+/cmd` — prod → pi3 (so `dk_bom_mqtt` receives BE commands)
 - `cassava/field/+/valve/+/ack` — pi3 → prod (so the BE receives acks)
-- `/sensor/weatherStation`, `field1..field4` — pi3 → prod (so the BE listener
+- `/sensor/weatherStation2`, `field1..field4` — pi3 → prod (so the BE listener
   and the prod-side `edge_to_mongo_*` see them)
 
 If pi3 connects directly to the prod broker (no local mosquitto), this

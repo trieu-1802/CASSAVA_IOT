@@ -21,7 +21,7 @@ const SENSOR_CONFIG = {
   temperature: { name: 'Nhiệt độ môi trường', unit: '°C', icon: <FireOutlined style={{ color: '#cf1322' }} /> },
   relativeHumidity: { name: 'Độ ẩm không khí', unit: '%', icon: <CloudOutlined style={{ color: '#096dd9' }} /> },
   rain: { name: 'Lượng mưa tích lũy', unit: 'mm', icon: <DashboardOutlined style={{ color: '#3f6600' }} /> },
-  radiation: { name: 'Bức xạ mặt trời', unit: 'W/m²', icon: <ThunderboltOutlined style={{ color: '#d48806' }} /> },
+  radiation: { name: 'Bức xạ mặt trời', unit: 'MJ/m²/h', icon: <ThunderboltOutlined style={{ color: '#d48806' }} /> },
   wind: { name: 'Tốc độ gió', unit: 'm/s', icon: <CompassOutlined style={{ color: '#531dab' }} /> },
 };
 

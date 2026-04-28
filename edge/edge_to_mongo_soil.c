@@ -1,6 +1,6 @@
 /* edge_to_mongo_soil.c — standalone subscriber for the per-field soil moisture
  * MQTT topics; inserts each reading into MongoDB sensor_value as
- * { fieldId, sensorId, value, time, source }. (No groupId — soil rows are
+ * { fieldId, sensorId, value, time }. (No groupId — soil rows are
  * keyed strictly to a field; the group is derivable via field→group lookup.)
  *
  * Build:
@@ -108,7 +108,6 @@ static int insert_reading(const char *field_id, const char *sensor_id,
     BSON_APPEND_UTF8(doc, "sensorId", sensor_id);
     BSON_APPEND_DOUBLE(doc, "value",  value);
     BSON_APPEND_DATE_TIME(doc, "time", t_ms);
-    BSON_APPEND_UTF8(doc, "source",   "mqtt");
 
     bson_error_t err;
     bool ok = mongoc_collection_insert_one(g_coll, doc, NULL, NULL, &err);

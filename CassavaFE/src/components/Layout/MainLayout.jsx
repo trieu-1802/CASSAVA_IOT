@@ -10,7 +10,7 @@ import {
   UserOutlined, // Thêm icon này
   DownOutlined  // Thêm icon này
 } from '@ant-design/icons';
-import { useNavigate, Outlet, useLocation } from 'react-router-dom';
+import { useNavigate, Outlet, useLocation, Navigate } from 'react-router-dom';
 import logoUet from '../../assets/images/logo-uet.png';
 
 const { Header, Sider, Content } = Layout;
@@ -30,7 +30,11 @@ const MainLayout = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 // 1. Lấy thông tin user từ localStorage để kiểm tra quyền
-  const userData = JSON.parse(localStorage.getItem("user"));
+  const userData = JSON.parse(localStorage.getItem("user") || 'null');
+  // Guard: chưa đăng nhập (hoặc đã xoá session) → đẩy về /login
+  if (!userData || !userData.accessToken) {
+    return <Navigate to="/login" replace />;
+  }
   const isAdmin = userData?.isAdmin == true; //// Kiểm tra trường admin trong Token/User
   //const isAdmin = true;
 

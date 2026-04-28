@@ -81,16 +81,15 @@ export default YieldTab;
 */
 import React from 'react';
 import { Row, Col, Card, Empty } from 'antd';
-import { 
-  AreaChart, 
-  Area, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  ResponsiveContainer, 
+import {
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
   Legend,
-
 } from 'recharts';
 
 const YieldTab = ({ data }) => {
@@ -128,12 +127,12 @@ const YieldTab = ({ data }) => {
                         />
                         <Legend verticalAlign="top" height={36}/>
                         
-                        <Area 
-                            type="monotone" 
-                            dataKey={dataKey} 
-                            stroke={color} 
+                        <Area
+                            type="monotone"
+                            dataKey={dataKey}
+                            stroke={color}
                             strokeWidth={3}
-                            fillOpacity={1} 
+                            fillOpacity={1}
                             fill={`url(#color${dataKey})`} // Sử dụng Gradient đã định nghĩa ở trên
                             name={title}
                             animationDuration={1200}

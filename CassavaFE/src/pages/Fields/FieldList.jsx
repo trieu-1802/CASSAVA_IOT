@@ -91,19 +91,18 @@ const FieldList = () => {
   };
 
   const handleModalSubmit = async (values) => {
-    // TODO: Chỗ này cậu sẽ thay bằng authService.post() hoặc authService.put() để lưu vào DB thực tế
-     setLoading(true); // Hiển thị loading khi đang đợi Server xử lý
+     setLoading(true);
      try {
+      const payload = {
+        ...values,
+        idUser: editingField?.idUser || userData?.id,
+      };
       if(editingField) {
-        // TRƯỜNG HỢP: SỬA (UPDATE)
-        // Giả sử API sửa của bạn là PUT /updateField hoặc tương tự
         const fieldId = editingField.id;
-        await fieldService.put(`/field/updateField/${fieldId}`, values);
+        await fieldService.put(`/field/updateField/${fieldId}`, payload);
         message.success("Cập nhật thông số cánh đồng thành công!");
       } else {
-        // TRƯỜNG HỢP: THÊM MỚI (CREATE)
-        // Gọi đến API @PostMapping("createField") ở Backend Java
-        await fieldService.post('/field/createField', values);
+        await fieldService.post('/field/createField', payload);
         message.success("Thêm cánh đồng mới thành công!");
       }
       setIsModalOpen(false); // Đóng Modal

@@ -4,7 +4,7 @@ public final class MqttSensorTopics {
 
     private MqttSensorTopics() {}
 
-    public static final String DEFAULT_WEATHER_TOPIC = "/sensor/weatherStation";
+    public static final String DEFAULT_WEATHER_TOPIC = "/sensor/weatherStation2";
 
     public static final String SENSOR_KEY_TEMPERATURE = "t";
     public static final String SENSOR_KEY_RELATIVE_HUMIDITY = "h";
