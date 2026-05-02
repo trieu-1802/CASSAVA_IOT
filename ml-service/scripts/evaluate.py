@@ -17,10 +17,14 @@ import pandas as pd
 
 from ml.base import AnomalyDetector
 from ml.data import load_sensor_series, train_test_split_chrono
+from ml.seasonal_zscore import SeasonalZScoreDetector
+from ml.zscore import ZScoreDetector
 
 
-# Branches register their detectors here. Base scaffold registers none.
-AVAILABLE_DETECTORS: dict[str, type[AnomalyDetector]] = {}
+AVAILABLE_DETECTORS: dict[str, type[AnomalyDetector]] = {
+    "zscore": ZScoreDetector,
+    "seasonal_zscore": SeasonalZScoreDetector,
+}
 
 
 @dataclass

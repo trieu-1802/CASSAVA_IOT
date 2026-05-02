@@ -2,10 +2,18 @@
 
 Python anomaly detection service for CASSAVA_IOT. Reads sensor history from MongoDB, detects anomalies in hourly-resampled weather data. Runs as a separate process from `cassavaBE`; communicates via HTTP (FastAPI on port 8082 by default).
 
-This base scaffold is shared between two implementation branches:
+**This branch (`feat/anomaly-zscore`) implements:**
 
-- **`feat/anomaly-zscore`** — Modified Z-score (sliding window) + Seasonal Z-score (hour-of-day buckets)
-- **`feat/anomaly-ml`** — ARIMA + SARIMA (univariate temperature) + LSTM (multivariate, NASA-trained)
+- **Modified Z-score** (`ml/zscore.py`) — sliding window of 60 hourly points; uses MAD instead of std → robust to outliers in the window. Iglewicz & Hoaglin formula.
+- **Seasonal Z-score** (`ml/seasonal_zscore.py`) — hour-of-day buckets; compares value against historical distribution at the same hour.
+
+Sister branch `feat/anomaly-ml` implements ARIMA + SARIMA + LSTM. Use:
+
+```bash
+git checkout feat/anomaly-zscore && python -m scripts.evaluate --methods all > /tmp/zscore.txt
+git checkout feat/anomaly-ml     && python -m scripts.evaluate --methods all > /tmp/ml.txt
+diff /tmp/zscore.txt /tmp/ml.txt
+```
 
 Detection cadence on both branches is **hourly**. The Java BE's `RangeCheckService` continues to run per-minute as Tier 1 — this service is independent of it.
 

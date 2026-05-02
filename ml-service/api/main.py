@@ -1,32 +1,61 @@
-"""FastAPI app skeleton.
+"""FastAPI app — Z-score branch.
 
-Detection endpoints are implemented per branch:
-- feat/anomaly-zscore: registers ZScoreDetector + SeasonalZScoreDetector
-- feat/anomaly-ml: registers ArimaDetector + SarimaDetector + LstmDetector
-
-This base scaffold leaves DETECTORS empty; /detect returns 503 until a branch
-populates it.
+Registers ZScoreDetector + SeasonalZScoreDetector at startup, fitting both
+from the last 30 days of Mongo data. /detect runs both in parallel and ORs
+their verdicts.
 """
 from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
 
 from fastapi import FastAPI, HTTPException
 
 from ml.base import AnomalyDetector
+from ml.data import load_sensor_series
+from ml.seasonal_zscore import SeasonalZScoreDetector
+from ml.zscore import ZScoreDetector
 from .schemas import DetectRequest, DetectResponse, MethodVerdict, ModelInfo
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
-# Branch-specific code populates this dict in its lifespan/startup.
 DETECTORS: dict[str, AnomalyDetector] = {}
+
+# How far back to look when fitting at startup.
+FIT_LOOKBACK_DAYS = 30
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Branches override this by importing main and adding to DETECTORS at startup.
+    try:
+        start = datetime.now(timezone.utc) - timedelta(days=FIT_LOOKBACK_DAYS)
+        series = load_sensor_series(start=start)
+        clean = series.dropna()
+        logger.info("Loaded %d hourly points (last %d days) for fitting", len(clean), FIT_LOOKBACK_DAYS)
+
+        if len(clean) >= 10:
+            try:
+                z = ZScoreDetector()
+                z.fit(series)
+                DETECTORS[z.name] = z
+                logger.info("Fit ZScoreDetector (residual_std=%.3f)", z.residual_std or 0)
+            except Exception as e:
+                logger.warning("ZScoreDetector fit failed: %s", e)
+
+            try:
+                s = SeasonalZScoreDetector()
+                s.fit(series)
+                DETECTORS[s.name] = s
+                logger.info("Fit SeasonalZScoreDetector (%d hour buckets)", len(s._bucket_stats))
+            except Exception as e:
+                logger.warning("SeasonalZScoreDetector fit failed: %s", e)
+        else:
+            logger.warning("Insufficient data (%d points) — no detectors fit", len(clean))
+    except Exception:
+        logger.exception("Startup fit pipeline failed")
+
     logger.info("ml-service starting; %d detectors loaded", len(DETECTORS))
     yield
     logger.info("ml-service shutting down")
