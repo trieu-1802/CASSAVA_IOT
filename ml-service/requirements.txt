@@ -1,0 +1,14 @@
+# Base scaffold deps. Z-score branch adds scipy. ML branch adds statsmodels + tensorflow + sklearn + requests.
+
+# Mongo + data
+pymongo>=4.6
+pandas>=2.2
+numpy>=1.26
+
+# API
+fastapi>=0.110
+uvicorn[standard]>=0.27
+pydantic>=2.6
+
+# Config
+python-dotenv>=1.0

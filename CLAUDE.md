@@ -27,6 +27,18 @@ mvn test              # run all tests
 mvn test -Dtest=ClassName#methodName   # run a single test
 ```
 
+### ML service (`ml-service/`) — optional, anomaly detection only
+```bash
+cd ml-service
+python -m venv .venv && source .venv/Scripts/activate
+pip install -r requirements.txt
+cp .env.example .env
+python -m scripts.check_data        # verify Mongo data sufficiency
+uvicorn api.main:app --port 8082    # FastAPI on 8082, loopback only in prod
+```
+
+Python 3.13. Not auto-started — run manually when working on anomaly detection. The Java BE does not depend on it; it operates in parallel against the same Mongo (`sensor_value`). Two implementation branches exist: `feat/anomaly-zscore` (statistical) and `feat/anomaly-ml` (ARIMA/SARIMA/LSTM). Detection cadence is hourly; the existing Java `RangeCheckService` continues to run per-minute as Tier 1 and is independent of `ml-service`.
+
 Both FE and BE must run concurrently for development. FE Axios instances read `VITE_API_BASE` from env files — `.env.development` sets it to `http://localhost:8081`, `.env.production` sets it to `/cassava/api` (relative, resolved by nginx under the prod deploy). No Vite proxy config.
 
 ## Architecture

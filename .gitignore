@@ -9,6 +9,13 @@ CassavaFE/dist/
 CassavaFE/node_modules/
 cassavaBE/target/
 
+# ml-service (Python) — venv + cache + model artifacts
+ml-service/.venv/
+ml-service/artifacts/
+ml-service/.env
+**/__pycache__/
+*.pyc
+
 # Local env overrides (team-wide .env.development / .env.production ARE committed)
 .env.local
 .env.*.local

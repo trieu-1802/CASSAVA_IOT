@@ -1,0 +1,38 @@
+"""Pydantic request/response models for the API."""
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Optional
+
+from pydantic import BaseModel, Field
+
+
+class DetectRequest(BaseModel):
+    group_id: str = Field(alias="groupId")
+    sensor_id: str = Field(alias="sensorId")
+    time: datetime
+    value: float
+
+    class Config:
+        populate_by_name = True
+
+
+class MethodVerdict(BaseModel):
+    name: str
+    predicted: Optional[float] = None
+    residual: Optional[float] = None
+    score: float
+    is_anomaly: bool
+
+
+class DetectResponse(BaseModel):
+    time: datetime
+    actual: float
+    is_anomaly: bool  # OR over methods
+    methods: list[MethodVerdict]
+
+
+class ModelInfo(BaseModel):
+    name: str
+    loaded: bool
+    residual_std: Optional[float] = None
