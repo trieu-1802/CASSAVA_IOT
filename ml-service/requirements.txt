@@ -1,4 +1,4 @@
-# Base scaffold deps. Z-score branch adds scipy. ML branch adds statsmodels + tensorflow + sklearn + requests.
+# ML branch — full dep set: ARIMA/SARIMA + LSTM + NASA POWER fetch.
 
 # Mongo + data
 pymongo>=4.6
@@ -12,3 +12,13 @@ pydantic>=2.6
 
 # Config
 python-dotenv>=1.0
+
+# Statistical models (ARIMA, SARIMA)
+statsmodels>=0.14
+
+# Deep learning (LSTM) — TF 2.18+ adds Python 3.13 support
+tensorflow>=2.18
+scikit-learn>=1.4
+
+# NASA POWER API client
+requests>=2.31

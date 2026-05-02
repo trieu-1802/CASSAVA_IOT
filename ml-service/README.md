@@ -2,12 +2,36 @@
 
 Python anomaly detection service for CASSAVA_IOT. Reads sensor history from MongoDB, detects anomalies in hourly-resampled weather data. Runs as a separate process from `cassavaBE`; communicates via HTTP (FastAPI on port 8082 by default).
 
-This base scaffold is shared between two implementation branches:
+**This branch (`feat/anomaly-ml`) implements:**
 
-- **`feat/anomaly-zscore`** — Modified Z-score (sliding window) + Seasonal Z-score (hour-of-day buckets)
-- **`feat/anomaly-ml`** — ARIMA + SARIMA (univariate temperature) + LSTM (multivariate, NASA-trained)
+- **ARIMA** (`ml/arima_model.py`) — univariate hourly temperature, default order `(2,1,2)`. Trained on Mongo MQTT data.
+- **SARIMA** (`ml/sarima_model.py`) — adds seasonal terms `(1,1,1,24)` to capture the daily cycle. Trained on Mongo MQTT data.
+- **LSTM** (`ml/lstm_model.py`) — multivariate (5 weather vars), 48h window → predict next-hour temperature. Trained on **NASA POWER** historical data via `nasa_loader.py`. Detection still runs against MQTT — LSTM forecast is the "expected" baseline.
+
+All three are forecasting-based: model predicts next hourly value; large residual ⇒ anomaly.
+
+Sister branch `feat/anomaly-zscore` implements Modified Z-score + Seasonal Z-score. Use:
+
+```bash
+git checkout feat/anomaly-zscore && python -m scripts.evaluate --methods all > /tmp/zscore.txt
+git checkout feat/anomaly-ml     && python -m scripts.evaluate --methods all > /tmp/ml.txt
+diff /tmp/zscore.txt /tmp/ml.txt
+```
 
 Detection cadence on both branches is **hourly**. The Java BE's `RangeCheckService` continues to run per-minute as Tier 1 — this service is independent of it.
+
+## Training (ML branch only)
+
+Models must be trained before the API can detect:
+
+```bash
+python -m scripts.train --model arima                 # fast, uses Mongo data
+python -m scripts.train --model sarima                # slow, uses Mongo data
+python -m scripts.train --model lstm --nasa-years 3   # very slow first time (NASA fetch + LSTM train)
+python -m scripts.train --model all                   # all three sequentially
+```
+
+Artifacts land in `artifacts/{arima.pkl, sarima.pkl, lstm/{model.keras,meta.pkl}}` and `artifacts/nasa/*.csv` (NASA cache). The API `/detect` endpoint loads whichever artifacts exist at startup; missing ones are skipped.
 
 ## Setup
 

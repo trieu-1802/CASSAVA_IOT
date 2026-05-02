@@ -1,11 +1,9 @@
-"""FastAPI app skeleton.
+"""FastAPI app — ML branch.
 
-Detection endpoints are implemented per branch:
-- feat/anomaly-zscore: registers ZScoreDetector + SeasonalZScoreDetector
-- feat/anomaly-ml: registers ArimaDetector + SarimaDetector + LstmDetector
+Loads ARIMA, SARIMA, LSTM artifacts (if they exist) at startup. Models are
+trained offline via `python -m scripts.train --model {arima,sarima,lstm,all}`.
 
-This base scaffold leaves DETECTORS empty; /detect returns 503 until a branch
-populates it.
+/detect runs all loaded detectors in parallel and ORs their verdicts.
 """
 from __future__ import annotations
 
@@ -14,19 +12,45 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
 
+from ml.arima_model import ArimaDetector
 from ml.base import AnomalyDetector
+from ml.config import ARTIFACTS_DIR
+from ml.lstm_model import LstmDetector
+from ml.sarima_model import SarimaDetector
 from .schemas import DetectRequest, DetectResponse, MethodVerdict, ModelInfo
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
-# Branch-specific code populates this dict in its lifespan/startup.
 DETECTORS: dict[str, AnomalyDetector] = {}
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Branches override this by importing main and adding to DETECTORS at startup.
+    # (DetectorClass, artifact_path) — pkl for ARIMA/SARIMA, dir for LSTM.
+    artifacts = [
+        (ArimaDetector, ARTIFACTS_DIR / "arima.pkl"),
+        (SarimaDetector, ARTIFACTS_DIR / "sarima.pkl"),
+        (LstmDetector, ARTIFACTS_DIR / "lstm"),
+    ]
+
+    for cls, path in artifacts:
+        if not path.exists():
+            logger.info("Skipping %s — no artifact at %s", cls.__name__, path)
+            continue
+        try:
+            det = cls()
+            det.load(path)
+            DETECTORS[det.name] = det
+            logger.info("Loaded %s (residual_std=%.3f)", det.name, det.residual_std or 0)
+        except Exception as e:
+            logger.warning("Failed to load %s: %s", cls.__name__, e)
+
+    if not DETECTORS:
+        logger.warning(
+            "No models loaded. Train via: python -m scripts.train --model all"
+        )
+
     logger.info("ml-service starting; %d detectors loaded", len(DETECTORS))
     yield
     logger.info("ml-service shutting down")

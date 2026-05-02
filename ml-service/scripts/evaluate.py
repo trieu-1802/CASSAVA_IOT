@@ -11,16 +11,33 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
+from ml.arima_model import ArimaDetector
 from ml.base import AnomalyDetector
+from ml.config import ARTIFACTS_DIR
 from ml.data import load_sensor_series, train_test_split_chrono
+from ml.lstm_model import LstmDetector
+from ml.sarima_model import SarimaDetector
 
 
-# Branches register their detectors here. Base scaffold registers none.
-AVAILABLE_DETECTORS: dict[str, type[AnomalyDetector]] = {}
+AVAILABLE_DETECTORS: dict[str, type[AnomalyDetector]] = {
+    "arima": ArimaDetector,
+    "sarima": SarimaDetector,
+    "lstm": LstmDetector,
+}
+
+# LSTM is multivariate (NASA-trained); it cannot be re-fit from a univariate
+# train series here. evaluate.py loads it from artifacts/ if present, skips
+# otherwise. ARIMA/SARIMA can either load from artifacts or fit on the spot.
+ARTIFACT_PATHS: dict[str, "Path"] = {
+    "arima": ARTIFACTS_DIR / "arima.pkl",
+    "sarima": ARTIFACTS_DIR / "sarima.pkl",
+    "lstm": ARTIFACTS_DIR / "lstm",
+}
 
 
 @dataclass
@@ -76,7 +93,13 @@ def evaluate_detector(
     test_labels: pd.Series,
     k: float = 3.0,
 ) -> Metrics:
-    det.fit(train)
+    # Prefer artifact load over re-fitting (esp. for LSTM which can't refit on
+    # a univariate series).
+    artifact = ARTIFACT_PATHS.get(det.name)
+    if artifact and artifact.exists():
+        det.load(artifact)
+    else:
+        det.fit(train)
 
     preds = []
     actuals = []
@@ -146,8 +169,16 @@ def main() -> None:
         if name not in AVAILABLE_DETECTORS:
             print(f"  Unknown method: {name}")
             continue
+        # LSTM requires NASA-trained artifact; skip if missing.
+        if name == "lstm" and not ARTIFACT_PATHS["lstm"].exists():
+            print(f"  Skipping lstm: no artifact (run `python -m scripts.train --model lstm`)")
+            continue
         det = AVAILABLE_DETECTORS[name]()
-        m = evaluate_detector(det, train, test_perturbed, test_labels, k=args.k)
+        try:
+            m = evaluate_detector(det, train, test_perturbed, test_labels, k=args.k)
+        except Exception as e:
+            print(f"  {name} failed: {e}")
+            continue
         mae_s = f"{m.mae:.3f}" if m.mae is not None else "  -"
         rmse_s = f"{m.rmse:.3f}" if m.rmse is not None else "  -"
         print(f"{m.name:<25} {m.precision:>10.3f} {m.recall:>10.3f} {m.f1:>10.3f} {mae_s:>10} {rmse_s:>10}")
