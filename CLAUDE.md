@@ -27,7 +27,7 @@ mvn test              # run all tests
 mvn test -Dtest=ClassName#methodName   # run a single test
 ```
 
-### ML service (`ml-service/`) — optional, anomaly detection only
+### ML service (`ml-service/`) — optional, anomaly detection + forecasting
 ```bash
 cd ml-service
 python -m venv .venv && source .venv/Scripts/activate
@@ -37,7 +37,13 @@ python -m scripts.check_data        # verify Mongo data sufficiency
 uvicorn api.main:app --port 8082    # FastAPI on 8082, loopback only in prod
 ```
 
-Python 3.13. Not auto-started — run manually when working on anomaly detection. The Java BE does not depend on it; it operates in parallel against the same Mongo (`sensor_value`). Two implementation branches exist: `feat/anomaly-zscore` (statistical) and `feat/anomaly-ml` (ARIMA/SARIMA/LSTM). Detection cadence is hourly; the existing Java `RangeCheckService` continues to run per-minute as Tier 1 and is independent of `ml-service`.
+Python 3.13. Not auto-started — run manually when working on anomaly detection or forecasting. The Java BE does not depend on it; it operates in parallel against the same Mongo (`sensor_value`).
+
+Two roles, two endpoints (`feat/anomaly-compare` branch ships both):
+- **Detection** (`POST /detect`) — robust statistical methods in `ml/detectors/` (Modified Z-score, Seasonal Z-score). Forecasters can also be wrapped as detectors via `ml/detectors/residual.py`'s `ResidualDetector`.
+- **Forecasting** (`POST /forecast`) — `ml/forecasters/` (ARIMA, SARIMA, LSTM); returns h-step predictions. Use for irrigation planning inputs.
+
+Branches: `feat/anomaly-zscore` (statistical only), `feat/anomaly-ml` (ARIMA/SARIMA/LSTM only), `feat/anomaly-compare` (all five with dual role split). Detection cadence is hourly; the existing Java `RangeCheckService` continues to run per-minute as Tier 1 and is independent of `ml-service`. See `ml-service/docs/comparison-results.md` for empirical comparison (best detector: seasonal_zscore F1=0.948 at k=3; best h=1 forecaster: LSTM MAE 1.75°C; best h=24 forecaster: SARIMA MAE 5.64°C).
 
 Both FE and BE must run concurrently for development. FE Axios instances read `VITE_API_BASE` from env files — `.env.development` sets it to `http://localhost:8081`, `.env.production` sets it to `/cassava/api` (relative, resolved by nginx under the prod deploy). No Vite proxy config.
 

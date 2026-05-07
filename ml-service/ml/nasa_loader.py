@@ -12,6 +12,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import requests
 
@@ -62,7 +63,7 @@ def fetch_nasa_power(
         "time-standard": "UTC",
     }
 
-    print(f"Fetching NASA POWER {start:%Y-%m-%d} → {end:%Y-%m-%d} for ({lat}, {lon})...")
+    print(f"Fetching NASA POWER {start:%Y-%m-%d} -> {end:%Y-%m-%d} for ({lat}, {lon})...")
     resp = requests.get(NASA_BASE_URL, params=params, timeout=180)
     resp.raise_for_status()
     df = _parse_response(resp.json())
@@ -84,7 +85,7 @@ def _parse_response(raw: dict) -> pd.DataFrame:
             {pd.to_datetime(k, format="%Y%m%d%H", utc=True): v for k, v in series.items()}
         )
     df = pd.DataFrame(cols).sort_index()
-    df = df.replace(-999.0, pd.NA).astype(float)
+    df = df.replace(-999.0, np.nan).astype(float)
     df.index.name = "time"
     return df
 
@@ -94,20 +95,38 @@ def _load_cached(path: Path) -> pd.DataFrame:
     return df
 
 
-def fetch_years(years: int = 3, **kwargs) -> pd.DataFrame:
-    """Fetch the last `years` years of NASA data. Chunks into 1-year requests
-    because NASA POWER limits hourly range per call.
+def fetch_range(
+    start: datetime,
+    end: datetime,
+    **kwargs,
+) -> pd.DataFrame:
+    """Fetch NASA POWER hourly data over [start, end], chunking into 1-year
+    requests because NASA POWER caps hourly range per call. Each per-year
+    chunk is cached independently (see `fetch_nasa_power`).
     """
-    end = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-    # NASA hourly has a delay of ~2 months for finalized data; pull back from 60 days ago
-    end = end - timedelta(days=60)
-    start = end - timedelta(days=365 * years)
-
     chunks = []
     cur = start
     while cur < end:
         chunk_end = min(cur + timedelta(days=365), end)
         chunks.append(fetch_nasa_power(cur, chunk_end, **kwargs))
         cur = chunk_end + timedelta(days=1)
-
     return pd.concat(chunks).sort_index()
+
+
+def fetch_years(
+    years: int = 3,
+    end: datetime | None = None,
+    **kwargs,
+) -> pd.DataFrame:
+    """Fetch the last `years` years of NASA data ending at `end` (UTC midnight).
+
+    Convenience wrapper around `fetch_range`. If `end` is None, defaults to
+    (now - 60 days) since NASA hourly has a ~60-day finalization lag. Pass an
+    explicit `end` when recent NASA data is known-bad (NASA occasionally
+    publishes corrupt rows and backfills later).
+    """
+    if end is None:
+        end = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        end = end - timedelta(days=60)
+    start = end - timedelta(days=365 * years)
+    return fetch_range(start=start, end=end, **kwargs)
