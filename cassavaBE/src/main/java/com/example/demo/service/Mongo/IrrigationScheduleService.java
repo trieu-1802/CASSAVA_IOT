@@ -1,13 +1,16 @@
 package com.example.demo.service.Mongo;
 
 import com.example.demo.entity.MongoEntity.Field;
+import com.example.demo.entity.MongoEntity.IrrigationHistory;
 import com.example.demo.entity.MongoEntity.IrrigationSchedule;
 import com.example.demo.entity.MongoEntity.IrrigationSchedule.Status;
 import com.example.demo.repositories.mongo.FieldMongoRepository;
+import com.example.demo.repositories.mongo.IrrigationHistoryRepository;
 import com.example.demo.repositories.mongo.IrrigationScheduleRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.List;
 
@@ -19,6 +22,9 @@ public class IrrigationScheduleService {
 
     @Autowired
     private FieldMongoRepository fieldMongoRepository;
+
+    @Autowired
+    private IrrigationHistoryRepository irrigationHistoryRepository;
 
     public IrrigationSchedule create(IrrigationSchedule schedule) {
         if (schedule.getFieldId() == null || schedule.getFieldId().trim().isEmpty()) {
@@ -112,16 +118,78 @@ public class IrrigationScheduleService {
     }
 
     public IrrigationSchedule handleAck(String id, boolean ok, String errorMessage) {
+        if (ok) {
+            return markDoneAndRecord(id);
+        }
         IrrigationSchedule s = scheduleRepository.findById(id).orElse(null);
         if (s == null) return null;
         Date now = new Date();
-        s.setStatus(ok ? Status.DONE : Status.FAILED);
+        s.setStatus(Status.FAILED);
         s.setFinishedAt(now);
         s.setUpdatedAt(now);
         if (errorMessage != null) {
             s.setErrorMessage(errorMessage);
         }
         return scheduleRepository.save(s);
+    }
+
+    /**
+     * Mark a schedule as DONE: compute the actual water amount (mm) from
+     * field irrigation parameters × duration, persist it on the schedule,
+     * and log a row to irrigation_history so the event surfaces in the
+     * history view alongside auto-irrigation events.
+     *
+     * Idempotent: returns immediately if the schedule is already in a
+     * terminal status (DONE/FAILED/CANCELLED/NO_ACK).
+     */
+    public IrrigationSchedule markDoneAndRecord(String id) {
+        IrrigationSchedule s = scheduleRepository.findById(id).orElse(null);
+        if (s == null) return null;
+        if (s.getStatus() == Status.DONE || s.getStatus() == Status.FAILED
+                || s.getStatus() == Status.CANCELLED || s.getStatus() == Status.NO_ACK) {
+            return s;
+        }
+
+        Field field = fieldMongoRepository.findById(s.getFieldId()).orElse(null);
+        Double amountMm = computeAmountMm(field, s.getDurationSeconds());
+
+        Date now = new Date();
+        s.setStatus(Status.DONE);
+        s.setFinishedAt(now);
+        s.setUpdatedAt(now);
+        s.setAmount(amountMm);
+        IrrigationSchedule saved = scheduleRepository.save(s);
+
+        if (field != null && amountMm != null) {
+            Date eventTime = s.getStartedAt() != null ? s.getStartedAt() : now;
+            String timeStr = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(eventTime);
+            Double durationMinutes = s.getDurationSeconds() != null
+                    ? s.getDurationSeconds() / 60.0 : null;
+            IrrigationHistory history = new IrrigationHistory(
+                    s.getFieldId(),
+                    field.getStartTime(),
+                    timeStr,
+                    s.getUserName(),
+                    amountMm,
+                    durationMinutes);
+            irrigationHistoryRepository.save(history);
+        }
+
+        return saved;
+    }
+
+    /**
+     * mm = dripRate (L/h per emitter) × durationSeconds /
+     *      (3600 × distanceBetweenHole_m × distanceBetweenRow_m)
+     * Returns null if any required parameter is missing or non-positive.
+     */
+    private Double computeAmountMm(Field field, Integer durationSeconds) {
+        if (field == null || durationSeconds == null || durationSeconds <= 0) return null;
+        double dripRate = field.getDripRate();
+        double dHole = field.getDistanceBetweenHole();
+        double dRow = field.getDistanceBetweenRow();
+        if (dripRate <= 0 || dHole <= 0 || dRow <= 0) return null;
+        return dripRate * durationSeconds / (3600.0 * dHole * dRow);
     }
 
     public List<IrrigationSchedule> getStaleSent(Date sentBefore) {

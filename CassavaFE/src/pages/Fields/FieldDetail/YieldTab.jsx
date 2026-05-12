@@ -71,7 +71,7 @@ const YieldTab = ({ data }) => {
         <Row gutter={[16, 16]}>
             <Col xs={24} lg={12}>{renderLineChart("Sản lượng (Yield)", "yield", "#8884d8", "kg")}</Col>
             <Col xs={24} lg={12}>{renderLineChart("Diện tích lá (Leaf Area)", "leafArea", "#82ca9d", "m2")}</Col>
-            <Col xs={24} lg={12}>{renderLineChart("Lượng tưới (Irrigation)", "irrigation", "#0088FE", "m³/ha")}</Col>
+            <Col xs={24} lg={12}>{renderLineChart("Lượng tưới (Irrigation)", "irrigation", "#0088FE", "mm")}</Col>
             <Col xs={24} lg={12}>{renderLineChart("Carbon linh động (Labile Carbon)", "labileCarbon", "#FFBB28", "g")}</Col>
         </Row>
     );
@@ -145,7 +145,7 @@ const YieldTab = ({ data }) => {
 
     return (
         <Row gutter={[16, 16]}>
-            <Col xs={24} lg={12}>{renderAreaChart("Lượng tưới (Irrigation)", "irrigation", "#0088FE", "m³/ha")}</Col>
+            <Col xs={24} lg={12}>{renderAreaChart("Lượng tưới (Irrigation)", "irrigation", "#0088FE", "mm")}</Col>
             <Col xs={24} lg={12}>{renderAreaChart("Sản lượng (Yield)", "yield", "#8884d8", "kg")}</Col>
             <Col xs={24} lg={12}>{renderAreaChart("Diện tích lá (Leaf Area)", "leafArea", "#82ca9d", "m2")}</Col>
             <Col xs={24} lg={12}>{renderAreaChart("Carbon linh động (Labile Carbon)", "labileCarbon", "#FFBB28", "g")}</Col>

@@ -95,22 +95,57 @@ const SimulationDashboard = ({ fieldId, fieldName }) => {
     try {
       const params = { fieldId };
       if (cropStartTime) params.cropStartTime = cropStartTime;
-      const response = await api.get('/simulation/chart', { params });
 
-      const { day, yield: yields, irrigation, leafArea, labels } = response.data;
-      const formattedData = (day || []).map((d, index) => {
-        const dateObj = parseJavaDateString(d);
-        return {
-          time: dateObj
-            ? dateObj.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })
-            : 'Lỗi',
-          fullTime: d,
-          yield: yields?.[index] || 0,
-          irrigation: irrigation?.[index] || 0,
-          leafArea: leafArea?.[index] || 0,
-          labileCarbon: labels?.[index] || 0,
-        };
+      const [simRes, historyRes] = await Promise.all([
+        api.get('/simulation/chart', { params }),
+        fieldService.get('/irrigation-history', { params }),
+      ]);
+
+      const { day, yield: yields, leafArea, labels } = simRes.data;
+
+      // Aggregate irrigation_history events by day so the Irrigation chart on
+      // this page matches the totals shown in HistoryTab (instead of the
+      // simulation-predicted irrigation, which we ignore here on purpose).
+      const historyRows = Array.isArray(historyRes.data) ? historyRes.data : [];
+      const irrigationByDay = new Map();
+      historyRows.forEach((h) => {
+        const key = dayjs(h.time).format('YYYY-MM-DD');
+        irrigationByDay.set(key, (irrigationByDay.get(key) || 0) + (Number(h.amount) || 0));
       });
+
+      // Index simulation rows by their YYYY-MM-DD so we can look them up by date.
+      const simByDay = new Map();
+      (day || []).forEach((d, index) => {
+        const dateObj = parseJavaDateString(d);
+        if (!dateObj) return;
+        simByDay.set(dayjs(dateObj).format('YYYY-MM-DD'), { raw: d, index });
+      });
+
+      // Walk a unified daily timeline from min(first sim day, first event day)
+      // to max(last sim day, last event day). Without this, irrigation events
+      // before the first sim day (e.g. simulation index 0, which the BE skips)
+      // or after the last sim day would silently drop from the cumulative.
+      const allKeys = [...simByDay.keys(), ...irrigationByDay.keys()];
+      const formattedData = [];
+      if (allKeys.length > 0) {
+        allKeys.sort();
+        const firstDay = dayjs(allKeys[0]);
+        const lastDay = dayjs(allKeys[allKeys.length - 1]);
+        let irrigationCumulative = 0;
+        for (let d = firstDay; !d.isAfter(lastDay, 'day'); d = d.add(1, 'day')) {
+          const key = d.format('YYYY-MM-DD');
+          const sim = simByDay.get(key);
+          irrigationCumulative += irrigationByDay.get(key) || 0;
+          formattedData.push({
+            time: d.format('DD/MM'),
+            fullTime: sim ? sim.raw : d.toISOString(),
+            yield: sim ? (yields?.[sim.index] ?? null) : null,
+            irrigation: Number(irrigationCumulative.toFixed(2)),
+            leafArea: sim ? (leafArea?.[sim.index] ?? null) : null,
+            labileCarbon: sim ? (labels?.[sim.index] ?? null) : null,
+          });
+        }
+      }
       setChartData(formattedData);
     } catch (error) {
       console.error('Error details:', error);

@@ -26,7 +26,6 @@ const ManualIrrigationTab = ({ fieldId, fieldName, fieldMode = 'OPERATION' }) =>
   const isSimulation = fieldMode === 'SIMULATION';
   const [scheduledAt, setScheduledAt] = useState(dayjs().add(5, 'minute'));
   const [durationMinutes, setDurationMinutes] = useState(10);
-  const [amount, setAmount] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [schedules, setSchedules] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -71,7 +70,6 @@ const ManualIrrigationTab = ({ fieldId, fieldName, fieldMode = 'OPERATION' }) =>
         fieldId,
         scheduledTime: whenDayjs.toDate().toISOString(),
         durationSeconds: durationMinutes * 60,
-        amount: amount || null,
         userName,
       });
       message.success('Đã tạo lịch tưới');
@@ -93,7 +91,6 @@ const ManualIrrigationTab = ({ fieldId, fieldName, fieldMode = 'OPERATION' }) =>
           <p>Cánh đồng: <b>{fieldName || fieldId}</b></p>
           <p>Thời điểm: <b>{scheduledAt?.format('DD/MM/YYYY HH:mm')}</b></p>
           <p>Thời gian tưới: <b>{durationMinutes} phút</b></p>
-          {amount ? <p>Lượng dự kiến: <b>{amount} m³/ha</b></p> : null}
         </div>
       ),
       okText: 'Đặt lịch',
@@ -147,9 +144,9 @@ const ManualIrrigationTab = ({ fieldId, fieldName, fieldMode = 'OPERATION' }) =>
       width: 110,
     },
     {
-      title: 'Lượng (m³/ha)',
+      title: 'Lượng (mm)',
       dataIndex: 'amount',
-      render: (v) => v ?? '—',
+      render: (v) => (v != null ? Number(v).toFixed(2) : '—'),
       width: 130,
     },
     {
@@ -220,16 +217,6 @@ const ManualIrrigationTab = ({ fieldId, fieldName, fieldMode = 'OPERATION' }) =>
                   value={durationMinutes}
                   onChange={setDurationMinutes}
                   style={{ width: '100%' }}
-                />
-              </Form.Item>
-              <Form.Item label="Lượng nước dự kiến (m³/ha) — tùy chọn">
-                <InputNumber
-                  min={0}
-                  step={0.1}
-                  value={amount}
-                  onChange={setAmount}
-                  style={{ width: '100%' }}
-                  placeholder="Để trống nếu chỉ tính theo thời gian"
                 />
               </Form.Item>
 
