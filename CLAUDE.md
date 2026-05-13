@@ -76,7 +76,7 @@ Subsystems:
 - **operation** — BE ↔ edge for irrigation commands/acks (`cassava/field/+/valve/+/{cmd,ack}`).
 - **sensor** — edge publishes weather + soil readings on `/sensor/weatherStation2` and `field1..field4`. Persistence is owned by the **edge C binaries** (single-file `edge/edge_to_mongo_weather.c`, `edge/edge_to_mongo_soil.c`, compiled directly with `cc` on pi3) which insert directly into MongoDB; the BE listens to the same topics for **anomaly detection** (`MqttSensorListener` + `RangeCheckService`) but does not persist.
 
-See `deploy/MQTT.md` for runbook details and `docs/AUTO_IRRIGATION.md` for design rationale (especially why bridge over direct connect).
+See `deploy/MQTT.md` for runbook details (including the bridge-vs-direct rationale).
 
 Main app (`Demo1Application`) uses `@EnableCaching` and `@EnableScheduling`. `FieldSimulator.runScheduledSimulationForAllFields()` runs the crop simulation for every Mongo field twice daily at **07:00 and 17:00 `Asia/Ho_Chi_Minh`** (cron `0 0 7,17 * * *`). On-demand runs are still available via `GET /simulation/run?fieldId=X`.
 
