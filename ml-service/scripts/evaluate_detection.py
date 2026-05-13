@@ -1,17 +1,24 @@
 """Detector backtest -- precision/recall/F1 vs k, with synthetic anomaly injection.
 
-    python -m scripts.evaluate_detection                                # k=3.0, default detectors
+    python -m scripts.evaluate_detection                                # k=3.0, default detectors, temperature
     python -m scripts.evaluate_detection --k 5.0
     python -m scripts.evaluate_detection --sweep-k 1.0 10.0 0.5
     python -m scripts.evaluate_detection --sweep-k 1.0 10.0 0.5 --sweep-out sweep.csv
     python -m scripts.evaluate_detection --methods zscore,seasonal_zscore
     python -m scripts.evaluate_detection --methods zscore,lstm_residual   # composition demo
     python -m scripts.evaluate_detection --inject spike,drift
+    python -m scripts.evaluate_detection --sensor relativeHumidity      # evaluate a non-default sensor
+    python -m scripts.evaluate_detection --sensor all                   # loop over all 5 weather sensors
 
 Default mode is REFIT: every detector is fit fresh on the train slice for
 each evaluation. ML-residual detectors lift their order/architecture from
 the saved artifact metadata but re-fit parameters on the train slice -- no
 test-data leakage.
+
+Note on --sensor all: LSTM-residual is hardcoded around the temperature
+target in `ml/forecasters/lstm.py`, so for non-temperature sensors the
+LSTM detector is skipped automatically. zscore + seasonal_zscore work
+across all 5.
 """
 from __future__ import annotations
 
@@ -96,6 +103,7 @@ ALL_METHODS = [
     "zscore", "seasonal_zscore",
     "arima_residual", "sarima_residual", "lstm_residual",
 ]
+WEATHER_SENSORS = ["temperature", "relativeHumidity", "rain", "radiation", "wind"]
 DEFAULT_DATA_PATH = ARTIFACTS_DIR / "nasa" / "training_data.csv"
 
 
@@ -148,14 +156,23 @@ def inject_anomalies(
     return perturbed, labels
 
 
-def _train_test_split_chrono(
-    series: pd.Series, test_frac: float = 0.2
+def _train_test_split_holdout(
+    series: pd.Series, test_months: int = 1
 ) -> tuple[pd.Series, pd.Series]:
-    n = len(series)
-    if n < 10:
-        raise ValueError(f"Need at least 10 points to split, got {n}")
-    split = int(n * (1 - test_frac))
-    return series.iloc[:split], series.iloc[split:]
+    """Hold out the last `test_months` months as the test slice; everything before
+    is train. Matches `scripts.train` (`--test-months`), so the saved artifacts
+    never see the eval points."""
+    if len(series) < 50:
+        raise ValueError(f"Need at least 50 points to split, got {len(series)}")
+    cutoff = series.index[-1] - pd.DateOffset(months=test_months)
+    train = series[series.index < cutoff]
+    test = series[series.index >= cutoff]
+    if len(train) < 10 or len(test) < 10:
+        raise ValueError(
+            f"Holdout split produced train={len(train)} test={len(test)}; "
+            f"need >=10 each. Try a smaller --test-months."
+        )
+    return train, test
 
 
 def score_detector(
@@ -231,12 +248,106 @@ def _print_sweep_section(name: str, sweep_rows: list[Metrics]) -> Metrics:
     return best
 
 
+def _evaluate_sensor(
+    df: pd.DataFrame,
+    sensor: str,
+    selected: list[str],
+    patterns: list[str],
+    k_values: list[float],
+    test_months: int,
+) -> list[Metrics]:
+    """Run the full eval pipeline on one sensor column. Returns the best-F1 row
+    per detector (one row per detector if single k, else best across the sweep)."""
+    print(f"\n{'=' * 60}\nSensor: {sensor}\n{'=' * 60}")
+
+    if sensor not in df.columns:
+        print(f"  Column '{sensor}' not in data — skipping")
+        return []
+
+    series = df[sensor].dropna()
+    if len(series) < 100:
+        print(f"  Only {len(series)} points — too few to evaluate; skipping")
+        return []
+
+    train, test = _train_test_split_holdout(series, test_months=test_months)
+    test_perturbed, test_labels = inject_anomalies(test, patterns)
+    n_anomalies = int(test_labels.sum())
+    print(f"  Train: {len(train)}; test: {len(test)}; injected {n_anomalies} anomalies ({n_anomalies / len(test):.1%})")
+
+    multivariate_test = df.loc[test_perturbed.index].copy()
+    multivariate_test[sensor] = test_perturbed
+    multivariate_train = df.loc[train.index].copy()
+
+    runs: list[DetectorRun] = []
+    for name in selected:
+        # LSTM-residual targets `temperature` internally; skip it for other sensors.
+        if name == "lstm_residual" and sensor != "temperature":
+            print(f"  Skipping {name} (hardcoded to temperature target)")
+            continue
+        try:
+            det = _build_detector(name)
+            print(f"  Fitting + scoring {name}...")
+            run = score_detector(
+                det, train, test_perturbed, test_labels,
+                multivariate_train=multivariate_train,
+                multivariate_test=multivariate_test,
+            )
+            runs.append(run)
+        except Exception as e:
+            print(f"  {name} failed: {e}")
+
+    if not runs:
+        return []
+
+    if len(k_values) == 1:
+        rows = [metrics_at_k(r, k_values[0]) for r in runs]
+        _print_single_k_table(rows)
+        return rows
+
+    all_rows: list[Metrics] = []
+    best_per_det: list[Metrics] = []
+    for run in runs:
+        sweep_rows = [metrics_at_k(run, k) for k in k_values]
+        best = _print_sweep_section(run.name, sweep_rows)
+        best_per_det.append(best)
+        all_rows.extend(sweep_rows)
+
+    print()
+    print(f"=== Best k per detector ({sensor}) ===")
+    print(f"{'Method':<25} {'Best k':>8} {'Precision':>10} {'Recall':>10} {'F1':>10}")
+    print("-" * 70)
+    for m in best_per_det:
+        print(f"{m.name:<25} {m.k:>8.2f} {m.precision:>10.3f} {m.recall:>10.3f} {m.f1:>10.3f}")
+    return best_per_det
+
+
+def _print_cross_sensor_summary(per_sensor: dict[str, list[Metrics]]) -> None:
+    """Final table: best F1 per (sensor, detector) so the winner per sensor is obvious."""
+    print()
+    print("=" * 75)
+    print("Cross-sensor summary (best F1 per detector, per sensor)")
+    print("=" * 75)
+    print(f"{'Sensor':<20} {'Detector':<22} {'k':>6} {'Precision':>10} {'Recall':>9} {'F1':>8}")
+    print("-" * 75)
+    for sensor, rows in per_sensor.items():
+        if not rows:
+            print(f"{sensor:<20} (no results)")
+            continue
+        for m in rows:
+            print(f"{sensor:<20} {m.name:<22} {m.k:>6.2f} {m.precision:>10.3f} {m.recall:>9.3f} {m.f1:>8.3f}")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument(
         "--methods",
         default=",".join(DEFAULT_METHODS),
         help=f"Comma-separated detector names, or 'all'. Available: {', '.join(ALL_METHODS)}",
+    )
+    ap.add_argument(
+        "--sensor",
+        default="temperature",
+        help=f"Sensor column to evaluate, or 'all' for all 5 weather sensors. Available: {', '.join(WEATHER_SENSORS)}",
     )
     ap.add_argument("--inject", default="spike,outlier,drift")
     ap.add_argument("--k", type=float, default=3.0)
@@ -249,6 +360,12 @@ def main() -> None:
     )
     ap.add_argument("--sweep-out", type=Path, default=None)
     ap.add_argument("--data", type=Path, default=DEFAULT_DATA_PATH)
+    ap.add_argument(
+        "--test-months",
+        type=int,
+        default=1,
+        help="Hold out the last N months as test. Default 1 (matches scripts.train).",
+    )
     args = ap.parse_args()
 
     if not args.data.exists():
@@ -259,43 +376,10 @@ def main() -> None:
 
     print(f"Loading {args.data}...")
     df = pd.read_csv(args.data, index_col="time", parse_dates=["time"])
-    series = df["temperature"].dropna()
-    if len(series) < 100:
-        print(f"  Only {len(series)} hourly points -- too few to evaluate.")
-        return
-
-    train, test = _train_test_split_chrono(series)
-    patterns = [p.strip() for p in args.inject.split(",") if p.strip()]
-    print(f"Train: {len(train)} points; test: {len(test)} points; injecting {patterns}")
-    test_perturbed, test_labels = inject_anomalies(test, patterns)
-    n_anomalies = int(test_labels.sum())
-    print(f"  Test set has {n_anomalies} synthetic anomalies ({n_anomalies / len(test):.1%})")
-
-    multivariate_test = df.loc[test_perturbed.index].copy()
-    multivariate_test["temperature"] = test_perturbed
-    multivariate_train = df.loc[train.index].copy()
 
     selected = ALL_METHODS if args.methods == "all" else [m.strip() for m in args.methods.split(",")]
-
-    runs: list[DetectorRun] = []
-    print("\nMode: REFIT on train slice (no test-data leakage)")
-    print("Scoring detectors...")
-    for name in selected:
-        try:
-            det = _build_detector(name)
-            print(f"  Fitting + scoring {name}...")
-            run = score_detector(
-                det, train, test_perturbed, test_labels,
-                multivariate_train=multivariate_train,
-                multivariate_test=multivariate_test,
-            )
-            runs.append(run)
-            print(f"    Scored {len(run.scores)} points")
-        except Exception as e:
-            print(f"  {name} failed: {e}")
-
-    if not runs:
-        return
+    patterns = [p.strip() for p in args.inject.split(",") if p.strip()]
+    sensors = WEATHER_SENSORS if args.sensor == "all" else [args.sensor]
 
     if args.sweep_k:
         kmin, kmax, kstep = args.sweep_k
@@ -305,34 +389,33 @@ def main() -> None:
     else:
         k_values = [args.k]
 
-    if len(k_values) == 1:
-        rows = [metrics_at_k(r, k_values[0]) for r in runs]
-        _print_single_k_table(rows)
-    else:
-        all_rows: list[Metrics] = []
-        best_per_det: list[Metrics] = []
-        for run in runs:
-            sweep_rows = [metrics_at_k(run, k) for k in k_values]
-            best = _print_sweep_section(run.name, sweep_rows)
-            best_per_det.append(best)
-            all_rows.extend(sweep_rows)
+    print(f"Sensors: {sensors}")
+    print(f"Detectors: {selected}")
+    print(f"Injection patterns: {patterns}")
+    print(f"k_values: {[f'{k:.2f}' for k in k_values]}")
+    print(f"Test holdout: last {args.test_months} month(s)")
+    print("\nMode: REFIT on train slice (no test-data leakage)")
 
-        print()
-        print("=== Best k per detector (max F1) ===")
-        print(f"{'Method':<25} {'Best k':>8} {'Precision':>10} {'Recall':>10} {'F1':>10}")
-        print("-" * 70)
-        for m in best_per_det:
-            print(f"{m.name:<25} {m.k:>8.2f} {m.precision:>10.3f} {m.recall:>10.3f} {m.f1:>10.3f}")
+    per_sensor: dict[str, list[Metrics]] = {}
+    all_rows_for_csv: list[tuple[str, Metrics]] = []
+    for sensor in sensors:
+        best_rows = _evaluate_sensor(df, sensor, selected, patterns, k_values, args.test_months)
+        per_sensor[sensor] = best_rows
+        for m in best_rows:
+            all_rows_for_csv.append((sensor, m))
 
-        if args.sweep_out:
-            args.sweep_out.parent.mkdir(parents=True, exist_ok=True)
-            out_df = pd.DataFrame([
-                {"detector": m.name, "k": m.k, "precision": m.precision,
-                 "recall": m.recall, "f1": m.f1}
-                for m in all_rows
-            ])
-            out_df.to_csv(args.sweep_out, index=False)
-            print(f"\nFull sweep table saved -> {args.sweep_out}")
+    if len(sensors) > 1:
+        _print_cross_sensor_summary(per_sensor)
+
+    if args.sweep_out and all_rows_for_csv:
+        args.sweep_out.parent.mkdir(parents=True, exist_ok=True)
+        out_df = pd.DataFrame([
+            {"sensor": s, "detector": m.name, "k": m.k,
+             "precision": m.precision, "recall": m.recall, "f1": m.f1}
+            for s, m in all_rows_for_csv
+        ])
+        out_df.to_csv(args.sweep_out, index=False)
+        print(f"\nResults saved -> {args.sweep_out}")
 
 
 if __name__ == "__main__":

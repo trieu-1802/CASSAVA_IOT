@@ -81,14 +81,22 @@ def _build_for_refit(name: str) -> Forecaster:
     return cls()
 
 
-def _train_test_split_chrono(
-    series: pd.Series, test_frac: float = 0.2
+def _train_test_split_holdout(
+    series: pd.Series, test_months: int = 1
 ) -> tuple[pd.Series, pd.Series]:
-    n = len(series)
-    if n < 10:
-        raise ValueError(f"Need at least 10 points to split, got {n}")
-    split = int(n * (1 - test_frac))
-    return series.iloc[:split], series.iloc[split:]
+    """Hold out the last `test_months` months as test; everything before is train.
+    Matches scripts.train (`--test-months`)."""
+    if len(series) < 50:
+        raise ValueError(f"Need at least 50 points to split, got {len(series)}")
+    cutoff = series.index[-1] - pd.DateOffset(months=test_months)
+    train = series[series.index < cutoff]
+    test = series[series.index >= cutoff]
+    if len(train) < 10 or len(test) < 10:
+        raise ValueError(
+            f"Holdout split produced train={len(train)} test={len(test)}; "
+            f"need >=10 each."
+        )
+    return train, test
 
 
 def evaluate_forecaster(
@@ -173,8 +181,10 @@ def main() -> None:
         "--horizons",
         nargs="+",
         type=int,
-        default=[1, 6, 24],
-        help="Forecast horizons (in hours) to evaluate",
+        default=[1],
+        help="Forecast horizons (in hours) to evaluate. Default [1] — the only "
+             "horizon we use in production. Pass multiple ints (e.g. `--horizons 1 6 24`) "
+             "to compare degradation with horizon.",
     )
     ap.add_argument("--data", type=Path, default=DEFAULT_DATA_PATH)
     ap.add_argument(
@@ -185,6 +195,12 @@ def main() -> None:
              "Useful for LSTM where each predict is slow.",
     )
     ap.add_argument("--out", type=Path, default=None, help="Optional CSV output path")
+    ap.add_argument(
+        "--test-months",
+        type=int,
+        default=1,
+        help="Hold out the last N months as test. Default 1 (matches scripts.train).",
+    )
     args = ap.parse_args()
 
     if not args.data.exists():
@@ -200,8 +216,8 @@ def main() -> None:
         print(f"  Only {len(series)} hourly points -- too few to evaluate.")
         return
 
-    train, test = _train_test_split_chrono(series)
-    print(f"Train: {len(train)} points; test: {len(test)} points; horizons={args.horizons}")
+    train, test = _train_test_split_holdout(series, test_months=args.test_months)
+    print(f"Train: {len(train)} points; test: {len(test)} points (last {args.test_months}mo); horizons={args.horizons}")
     if args.max_points:
         print(f"  Walking at most {args.max_points} test starts per forecaster")
 

@@ -3,7 +3,7 @@
     # ONE TIME: fetch NASA POWER data into a CSV
     python -m scripts.fetch_nasa
 
-    # Train (reads artifacts/nasa/training_data.csv by default)
+    # Train (full CSV minus the last 1 month — that month is the eval holdout)
     python -m scripts.train --model arima
     python -m scripts.train --model sarima
     python -m scripts.train --model lstm
@@ -15,8 +15,16 @@
     python -m scripts.train --model arima --auto-order
     python -m scripts.train --model sarima --auto-order
 
+    # Adjust the test holdout; pass 0 to use the full CSV
+    python -m scripts.train --model arima --test-months 3
+    python -m scripts.train --model lstm --test-months 0
+
 ARIMA and SARIMA fit on the temperature column only; LSTM fits on the full
 multivariate frame (temperature, relativeHumidity, wind, rain, radiation).
+
+The **last 1 month** of the CSV is excluded from training and reserved as a
+held-out test set — matched by the same 1-month split in `evaluate_detection`
+and `evaluate_forecast`, so the saved artifacts never see the eval slice.
 
 Pass --data <path> to use a different CSV.
 """
@@ -39,7 +47,7 @@ from ml.forecasters import ArimaForecaster, LstmForecaster, SarimaForecaster  # 
 DEFAULT_DATA_PATH = ARTIFACTS_DIR / "nasa" / "training_data.csv"
 
 
-def _load_training_data(path: Path) -> pd.DataFrame:
+def _load_training_data(path: Path, test_months: int = 0) -> pd.DataFrame:
     if not path.exists():
         raise SystemExit(
             f"Training data not found at {path}.\n"
@@ -48,6 +56,14 @@ def _load_training_data(path: Path) -> pd.DataFrame:
     df = pd.read_csv(path, index_col="time", parse_dates=["time"])
     print(f"[DATA] Loaded {len(df)} hourly rows from {path}")
     print(f"       Span: {df.index[0]} .. {df.index[-1]}")
+
+    if test_months > 0:
+        test_cutoff = df.index[-1] - pd.DateOffset(months=test_months)
+        df_train = df[df.index < test_cutoff]
+        if len(df_train) < len(df):
+            print(f"[DATA] Held out last {test_months} month(s) for eval -> train={len(df_train)} rows")
+            print(f"       Train span: {df_train.index[0]} .. {df_train.index[-1]}")
+            return df_train
     return df
 
 
@@ -170,9 +186,17 @@ def main() -> None:
              "(0 = use full data). Useful for SARIMA where each candidate fit is slow. "
              "The final model is still fit on the full series with the chosen order.",
     )
+    ap.add_argument(
+        "--test-months",
+        type=int,
+        default=1,
+        help="Exclude the last N months from training, reserving them as a held-out "
+             "test set. Default 1 (matches evaluate_detection / evaluate_forecast). "
+             "Pass 0 to train on the full CSV.",
+    )
     args = ap.parse_args()
 
-    df = _load_training_data(args.data)
+    df = _load_training_data(args.data, test_months=args.test_months)
 
     if args.model in ("arima", "all"):
         train_arima(df, auto_order=args.auto_order, search_size=args.auto_search_size)
