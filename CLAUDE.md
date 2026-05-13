@@ -43,7 +43,13 @@ Two roles, two endpoints (`feat/anomaly-compare` branch ships both):
 - **Detection** (`POST /detect`) — robust statistical methods in `ml/detectors/` (Modified Z-score, Seasonal Z-score). Forecasters can also be wrapped as detectors via `ml/detectors/residual.py`'s `ResidualDetector`.
 - **Forecasting** (`POST /forecast`) — `ml/forecasters/` (ARIMA, SARIMA, LSTM); returns h-step predictions. Use for irrigation planning inputs.
 
-Branches: `feat/anomaly-zscore` (statistical only), `feat/anomaly-ml` (ARIMA/SARIMA/LSTM only), `feat/anomaly-compare` (all five with dual role split). Detection cadence is hourly; the existing Java `RangeCheckService` continues to run per-minute as Tier 1 and is independent of `ml-service`. See `ml-service/docs/comparison-results.md` for empirical comparison (best detector: seasonal_zscore F1=0.948 at k=3; best h=1 forecaster: LSTM MAE 1.75°C; best h=24 forecaster: SARIMA MAE 5.64°C).
+Branches: `feat/anomaly-zscore` (statistical only), `feat/anomaly-ml` (ARIMA/SARIMA/LSTM only), `feat/anomaly-compare` (all five with dual role split), `feat/anomaly-zscore-be` (WIP Java port of seasonal Z-score into cassavaBE — replaces `RangeCheckService` with `SeasonalZScoreService`; not yet merged). Detection cadence is hourly; the Java Tier-1 check is independent of `ml-service`.
+
+Two benchmark reports exist with different scope; **don't conflate them**:
+- `ml-service/docs/comparison-results.md` — original 80/20 chronological split, temperature only. Headline: seasonal_zscore F1=0.948 at k=3; best h=1 forecaster LSTM MAE 1.75°C.
+- `ml-service/docs/bao-cao-so-sanh-cam-bien.md` (Vietnamese) — new 1-month holdout split, **all 5 weather sensors × all 5 detectors**. Headlines: `relativeHumidity/wind/radiation` → seasonal_zscore best; `rain` → sarima_residual best (z-score thuần insufficient on zero-inflated rain); `temperature` ambiguous (synthetic eval has 70% drift anomalies that point-wise z-score cannot catch by design, so F1 numbers underrate seasonal_zscore). Section 2 (Phương pháp luận) is the authoritative answer to "why m=24 not m=2160 for north Vietnam's 4 seasons" — quarterly retrain ≠ SARIMA seasonal period.
+
+`scripts/train.py`, `scripts/evaluate_detection.py`, `scripts/evaluate_forecast.py` all share `--test-months` (default 1) so saved artifacts never see the eval slice. `evaluate_detection.py --sensor all --methods all` reproduces the cross-sensor table.
 
 Both FE and BE must run concurrently for development. FE Axios instances read `VITE_API_BASE` from env files — `.env.development` sets it to `http://localhost:8081`, `.env.production` sets it to `/cassava/api` (relative, resolved by nginx under the prod deploy). No Vite proxy config.
 
