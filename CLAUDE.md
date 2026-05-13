@@ -89,7 +89,7 @@ Main app (`Demo1Application`) uses `@EnableCaching` and `@EnableScheduling`. `Fi
   - `FieldSensorController` (`/mongo/field/{fieldId}/sensor`) — per-field sensor mapping (soil moisture sensors)
   - `SensorValueController` (`/sensor-values`) — sensor history and combined values
   - `IrrigationHistoryController` (`/mongo/irrigation-history`) — irrigation record log
-  - `IrrigationScheduleController` (`/mongo/irrigation-schedule`) — manual irrigation scheduling (`PENDING/SENT/RUNNING/DONE/CANCELLED/FAILED/NO_ACK` lifecycle — see "Manual irrigation execution" below)
+  - `IrrigationScheduleController` (`/mongo/irrigation-schedule`) — manual irrigation scheduling (`PENDING/SENT/RUNNING/DONE/CANCELLED/FAILED/NO_ACK` lifecycle — see "Field mode (SIMULATION vs OPERATION)" below)
   - `SimulationController` (`/simulation`) — run/chart simulation
   - `UserController` (`/api/auth`) — login, register, list users
 - **service/**: Split between the root and a `Mongo/` subpackage.
@@ -180,7 +180,9 @@ Note: the sensor formerly named `humidity` was renamed to `relativeHumidity` —
 5. Results are replaced on each run (`deleteByFieldId` then `saveAll`)
 6. DOY-to-Date conversion: anchor-based — uses first weather data entry's actual date and DOY as reference, computes all other dates via `baseDate.plusDays(doy - baseDoy)`. Static fields `previousDoy`/`doyOffset` in `Field.java` must be reset via `resetDoyStaticFields()` before each Mongo data load.
 
-**Irrigation units**: The simulation model internally computes irrigation in **mm** (= L/m²). `FieldSimulator` converts to **m³/ha** (×10) when saving to MongoDB (`simulation_result` and `irrigation_history` collections). Frontend charts and history tables display m³/ha.
+**Irrigation units**: Irrigation is **mm** (= L/m²) end-to-end. The simulation model (`Field.java`) produces mm and `FieldSimulator` persists them as-is to MongoDB (`simulation_result.irrigation`, `irrigation_history.amount`). For manual schedules, the FE collects only the duration; `IrrigationScheduleService.markDoneAndRecord()` computes the amount on DONE as `mm = dripRate × durationSeconds / (3600 × distanceBetweenHole × distanceBetweenRow)` (drip-rate × time over the cell area defined by emitter spacing). Frontend charts, history tables, and form labels all display mm. (Historical note: values were previously stored as m³/ha — see migration note below if you're touching legacy data.)
+
+**Manual schedules → `irrigation_history`**: Both modes route their successful completion through `IrrigationScheduleService.markDoneAndRecord(id)`, which (a) sets the schedule's status to `DONE` + persists the computed `amount`, and (b) writes a row to `irrigation_history` so manual irrigation surfaces alongside auto-irrigation events in the history view. The method is **idempotent** — re-entry on a schedule already in a terminal status (`DONE/FAILED/CANCELLED/NO_ACK`) is a no-op. Call sites: `MqttAckListener` (via `handleAck(id, true, …)` for OPERATION mode) and `IrrigationScheduleScheduler.completeRunningSimulations()` (for SIMULATION mode). So `irrigation_history` is no longer auto-only.
 
 ### Key External Dependencies
 

@@ -78,7 +78,7 @@ const HistoryTab = ({ fieldId = 'fieldTest' }) => {
       sorter: (a, b) => dayjs(a.time).unix() - dayjs(b.time).unix(),
     },
     {
-      title: 'Lượng nước (m³/ha)',
+      title: 'Lượng nước (mm)',
       dataIndex: 'amount',
       key: 'amount',
       render: (val) => (val ? val.toFixed(2) : '0'),
@@ -90,6 +90,9 @@ const HistoryTab = ({ fieldId = 'fieldTest' }) => {
       render: (val) => (val ? val.toFixed(1) : '0'),
     },
   ];
+
+  const totalAmount = dataSource.reduce((acc, r) => acc + (Number(r.amount) || 0), 0);
+  const totalDuration = dataSource.reduce((acc, r) => acc + (Number(r.duration) || 0), 0);
 
   return (
     <div style={{ padding: '16px 0' }}>
@@ -115,6 +118,19 @@ const HistoryTab = ({ fieldId = 'fieldTest' }) => {
           />
         </Space>
       </Space>
+      {dataSource.length > 0 && (
+        <Space size={12} wrap style={{ marginBottom: 12 }}>
+          <Tag color="blue" style={{ padding: '4px 10px', fontSize: 13 }}>
+            Tổng số lần tưới: <b>{dataSource.length}</b>
+          </Tag>
+          <Tag color="cyan" style={{ padding: '4px 10px', fontSize: 13 }}>
+            Tổng lượng nước: <b>{totalAmount.toFixed(2)} mm</b>
+          </Tag>
+          <Tag color="geekblue" style={{ padding: '4px 10px', fontSize: 13 }}>
+            Tổng thời gian: <b>{totalDuration.toFixed(1)} phút</b>
+          </Tag>
+        </Space>
+      )}
       <Table
         columns={columns}
         dataSource={dataSource}

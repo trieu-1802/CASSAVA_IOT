@@ -259,12 +259,6 @@ const FieldList = () => {
       }
     },
     {
-      title: 'Ngày tuổi (DAP)',
-      dataIndex: 'dap', // Hiển thị thêm số ngày sau khi trồng
-      key: 'dap',
-      render: (text) => `${text} ngày`,
-    },
-    {
       title: 'Chế độ tưới',
       dataIndex: 'autoIrrigation', // Đổi từ model -> autoIrrigation
       key: 'autoIrrigation',

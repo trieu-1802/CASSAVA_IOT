@@ -1,10 +1,19 @@
 package com.example.demo.entity;
 
 public class HistoryIrrigation {
-    String time; // time of irrigation
+    String time; // legacy display string built from a fake 2024 calendar; do NOT use for date math
+    Double simulationT; // raw simulation time (offset from cropStart). Authoritative source for date math.
     String userName; // user who performed the irrigation
     Double amount; // amount of water used
     Double duration; // duration of irrigation in minutes
+
+    public Double getSimulationT() {
+        return simulationT;
+    }
+
+    public void setSimulationT(Double simulationT) {
+        this.simulationT = simulationT;
+    }
 
     public Double getDuration() {
         return duration;

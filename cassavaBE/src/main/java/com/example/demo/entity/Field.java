@@ -372,6 +372,7 @@ public class Field {
 
                     HistoryIrrigation history = new HistoryIrrigation();
                     history.setTime(timeStr);
+                    history.setSimulationT(t);
                     history.setUserName("Hệ thống tự động");
                     double amountVal = _IrrigationRate * (this.irrigationDuration / 24.0);
                     history.setAmount(amountVal);
