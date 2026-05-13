@@ -1,7 +1,7 @@
 package com.example.demo.mqtt;
 
-import com.example.demo.service.anomaly.RangeCheckResult;
-import com.example.demo.service.anomaly.RangeCheckService;
+import com.example.demo.service.anomaly.SeasonalZScoreService;
+import com.example.demo.service.anomaly.ZScoreResult;
 import jakarta.annotation.PostConstruct;
 import org.eclipse.paho.client.mqttv3.MqttClient;
 import org.slf4j.Logger;
@@ -9,6 +9,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+
+import java.time.Instant;
 
 @Component
 public class MqttSensorListener {
@@ -19,7 +21,7 @@ public class MqttSensorListener {
     private MqttClient mqttClient;
 
     @Autowired
-    private RangeCheckService rangeCheck;
+    private SeasonalZScoreService zscore;
 
     @Value("${mqtt.sensor.weather-topic:/sensor/weatherStation2}")
     private String weatherTopic;
@@ -49,6 +51,7 @@ public class MqttSensorListener {
         String body = new String(payload).trim();
         if (body.isEmpty()) return;
 
+        Instant now = Instant.now();
         for (String pair : body.split(";")) {
             String[] kv = pair.trim().split("\\s+");
             if (kv.length < 2) continue;
@@ -62,13 +65,25 @@ public class MqttSensorListener {
                 continue;
             }
 
-            RangeCheckResult r = rangeCheck.check(sensorId, value);
-            if (r.isValid()) {
-                log.info("[sensor] OK topic={} sensorId={} value={}", topic, sensorId, value);
-            } else {
-                log.warn("[sensor] RANGE_FAIL topic={} sensorId={} value={} min={} max={}",
-                        topic, sensorId, value, r.getMin(), r.getMax());
+            ZScoreResult r = zscore.score(sensorId, value, now);
+            switch (r.getStatus()) {
+                case ANOMALY -> log.warn(
+                        "[sensor] Z_FAIL topic={} sensorId={} value={} z={} mu={} sigma={} k={}",
+                        topic, sensorId, value, fmt(r.getZ()), fmt(r.getMu()), fmt(r.getSigma()), zscore.getK());
+                case OK -> log.info(
+                        "[sensor] OK topic={} sensorId={} value={} z={}",
+                        topic, sensorId, value, fmt(r.getZ()));
+                case CONSTANT -> log.info(
+                        "[sensor] OK topic={} sensorId={} value={} (constant μ={})",
+                        topic, sensorId, value, fmt(r.getMu()));
+                case NOT_FITTED -> log.info(
+                        "[sensor] OK topic={} sensorId={} value={} (no model yet)",
+                        topic, sensorId, value);
             }
         }
+    }
+
+    private static String fmt(double d) {
+        return String.format("%.3f", d);
     }
 }
