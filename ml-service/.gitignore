@@ -13,6 +13,9 @@ __pycache__/
 # Model artifacts (regenerate via scripts/train.py)
 artifacts/
 
+# Runtime logs (training + eval + uvicorn smoke runs)
+*.log
+
 # IDE
 .vscode/
 .idea/

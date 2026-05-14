@@ -1,23 +1,24 @@
 """LSTM forecaster — multivariate, trained on NASA POWER hourly data.
 
 Input: 48-hour window of (temperature, relativeHumidity, wind, rain, radiation).
-Output: predicted next-hour temperature.
+Output: predicted next-hour value of the configured `target` feature
+(default: temperature).
 
 Training data comes from NASA POWER (3+ years), giving the model a broad
 view of "typical" weather patterns. At prediction time, we query the last
 48 hours of MQTT sensor data from Mongo and ask the LSTM to predict the
-next hour's temperature.
+next hour's target.
 
 Architecture (small on purpose -- limited training data):
     LSTM(64) -> Dropout(0.2) -> Dense(32, relu) -> Dense(1)
 
 Multi-step horizons (`predict(time, h>1)`) are produced by iterative roll-forward:
-each step's predicted temperature is fed back into the window with the other
+each step's predicted target value is fed back into the window with the other
 features held at their last observed values. Crude but cheap; for richer
 horizons retrain with seq2seq output.
 
 To turn this into an anomaly detector, wrap with
-`ml.detectors.ResidualDetector(LstmForecaster())`.
+`ml.detectors.ResidualDetector(LstmForecaster(target=sensor))`.
 """
 from __future__ import annotations
 
@@ -32,18 +33,28 @@ from ..base import ForecastResult, Forecaster
 from ..data import load_sensor_series
 
 LSTM_FEATURES = ["temperature", "relativeHumidity", "wind", "rain", "radiation"]
-TARGET_FEATURE = "temperature"
-TARGET_IDX = 0  # temperature is first in LSTM_FEATURES
 
 
 class LstmForecaster(Forecaster):
     name = "lstm"
 
-    def __init__(self, window: int = 48, epochs: int = 30, batch_size: int = 32) -> None:
+    def __init__(
+        self,
+        window: int = 48,
+        epochs: int = 30,
+        batch_size: int = 32,
+        target: str = "temperature",
+    ) -> None:
         super().__init__()
+        if target not in LSTM_FEATURES:
+            raise ValueError(
+                f"LSTM target {target!r} not in LSTM_FEATURES {LSTM_FEATURES}"
+            )
         self.window = window
         self.epochs = epochs
         self.batch_size = batch_size
+        self.target = target
+        self.target_idx = LSTM_FEATURES.index(target)
         self._scaler = None  # sklearn MinMaxScaler
         self._model = None   # Keras model
         # Offline-evaluation context: when set, predict() pulls the 48h window
@@ -90,16 +101,16 @@ class LstmForecaster(Forecaster):
         self.fitted = True
 
         yhat_scaled = self._model.predict(X, verbose=0).flatten()
-        predicted_temp = self._inverse_target(yhat_scaled)
-        actual_temp = df[TARGET_FEATURE].iloc[self.window :].values
-        residuals = pd.Series(actual_temp - predicted_temp)
+        predicted_target = self._inverse_target(yhat_scaled)
+        actual_target = df[self.target].iloc[self.window :].values
+        residuals = pd.Series(actual_target - predicted_target)
         self._calibrate_residual_std(residuals)
 
     def _make_sequences(self, scaled: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         X, y = [], []
         for i in range(len(scaled) - self.window):
             X.append(scaled[i : i + self.window])
-            y.append(scaled[i + self.window, TARGET_IDX])
+            y.append(scaled[i + self.window, self.target_idx])
         return np.array(X), np.array(y)
 
     def _inverse_target(self, scaled_y: np.ndarray) -> np.ndarray:
@@ -107,8 +118,8 @@ class LstmForecaster(Forecaster):
         Scaler was fit on all features, so we pad the others with zeros.
         """
         pad = np.zeros((len(scaled_y), len(LSTM_FEATURES)))
-        pad[:, TARGET_IDX] = scaled_y
-        return self._scaler.inverse_transform(pad)[:, TARGET_IDX]
+        pad[:, self.target_idx] = scaled_y
+        return self._scaler.inverse_transform(pad)[:, self.target_idx]
 
     # ---- prediction ------------------------------------------------------
 
@@ -133,7 +144,7 @@ class LstmForecaster(Forecaster):
 
             # Roll the window: drop oldest, append [yhat_scaled, last-features-unchanged]
             next_row = scaled_window[-1].copy()
-            next_row[TARGET_IDX] = yhat_scaled
+            next_row[self.target_idx] = yhat_scaled
             scaled_window = np.vstack([scaled_window[1:], next_row])
 
         out_ts = pd.date_range(ts, periods=horizon, freq="h")
@@ -177,6 +188,7 @@ class LstmForecaster(Forecaster):
                     "window": self.window,
                     "epochs": self.epochs,
                     "batch_size": self.batch_size,
+                    "target": self.target,
                     "scaler": self._scaler,
                     "residual_std": self.residual_std,
                 },
@@ -192,6 +204,9 @@ class LstmForecaster(Forecaster):
         self.window = d["window"]
         self.epochs = d["epochs"]
         self.batch_size = d["batch_size"]
+        # Legacy artifacts (pre-target field) default to temperature.
+        self.target = d.get("target", "temperature")
+        self.target_idx = LSTM_FEATURES.index(self.target)
         self._scaler = d["scaler"]
         self.residual_std = d["residual_std"]
         self.fitted = True

@@ -1,4 +1,4 @@
-"""POST /forecast -- run all loaded forecasters and return per-method predictions.
+"""POST /forecast -- run all loaded forecasters for one sensor.
 
 Body: { groupId, sensorId, time, horizon }. `time` is the start of the
 forecast window; the response contains `horizon` hourly predictions per
@@ -26,9 +26,17 @@ def forecast(req: ForecastRequest) -> ForecastResponse:
     if req.horizon < 1:
         raise HTTPException(400, "horizon must be >= 1")
 
+    fcs = FORECASTERS.get(req.sensor_id)
+    if not fcs:
+        raise HTTPException(
+            404,
+            f"No forecasters registered for sensorId={req.sensor_id}. "
+            f"Available: {list(FORECASTERS.keys())}",
+        )
+
     ts = pd.Timestamp(req.time)
     methods: list[MethodForecast] = []
-    for name, fc in FORECASTERS.items():
+    for name, fc in fcs.items():
         try:
             result = fc.predict(ts, horizon=req.horizon)
             methods.append(
@@ -40,7 +48,7 @@ def forecast(req: ForecastRequest) -> ForecastResponse:
                 )
             )
         except Exception as e:
-            logger.exception("Forecaster %s failed during predict", name)
+            logger.exception("Forecaster %s/%s failed during predict", req.sensor_id, name)
             methods.append(
                 MethodForecast(
                     name=name,

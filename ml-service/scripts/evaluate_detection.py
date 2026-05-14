@@ -12,13 +12,14 @@
 
 Default mode is REFIT: every detector is fit fresh on the train slice for
 each evaluation. ML-residual detectors lift their order/architecture from
-the saved artifact metadata but re-fit parameters on the train slice -- no
+the saved artifact metadata (per-sensor artifact wins; legacy temperature
+artifact is the fallback) but re-fit parameters on the train slice -- no
 test-data leakage.
 
-Note on --sensor all: LSTM-residual is hardcoded around the temperature
-target in `ml/forecasters/lstm.py`, so for non-temperature sensors the
-LSTM detector is skipped automatically. zscore + seasonal_zscore work
-across all 5.
+LSTM-residual now retargets per sensor: the multivariate input window is
+still all 5 weather features, but the prediction head is set to `sensor`.
+So `--sensor all` runs a fair LSTM comparison across temperature, RH, rain,
+radiation, and wind.
 """
 from __future__ import annotations
 
@@ -45,24 +46,37 @@ from ml.forecasters import ArimaForecaster, LstmForecaster, SarimaForecaster  # 
 
 # Each entry maps a CLI name to a callable that builds a fresh detector for refit.
 # ML-residual detectors are exposed via composition so the comparison is honest:
-# `lstm_residual` evaluates the LSTM forecaster wrapped as a detector.
-def _build_detector(name: str) -> AnomalyDetector:
+# `lstm_residual` evaluates the LSTM forecaster wrapped as a detector. The
+# `sensor` argument lets us re-target LSTM (and lift sensor-specific
+# ARIMA/SARIMA orders) when those are available.
+def _build_detector(name: str, sensor: str = "temperature") -> AnomalyDetector:
     if name == "zscore":
         return ZScoreDetector()
     if name == "seasonal_zscore":
         return SeasonalZScoreDetector()
     if name == "arima_residual":
-        return ResidualDetector(_build_forecaster("arima"), name="arima_residual")
+        return ResidualDetector(_build_forecaster("arima", sensor), name="arima_residual")
     if name == "sarima_residual":
-        return ResidualDetector(_build_forecaster("sarima"), name="sarima_residual")
+        return ResidualDetector(_build_forecaster("sarima", sensor), name="sarima_residual")
     if name == "lstm_residual":
-        return ResidualDetector(_build_forecaster("lstm"), name="lstm_residual")
+        return ResidualDetector(_build_forecaster("lstm", sensor), name="lstm_residual")
     raise SystemExit(f"Unknown detector: {name}")
 
 
-def _build_forecaster(name: str):
-    """Build a forecaster, lifting hyperparameters from its artifact if present."""
-    artifact_paths = {
+def _build_forecaster(name: str, sensor: str = "temperature"):
+    """Build a forecaster, lifting hyperparameters from its artifact if present.
+
+    Per-sensor artifacts (`arima_<sensor>.pkl`, `sarima_<sensor>.pkl`,
+    `lstm_<sensor>/`) win when present; otherwise we fall back to the legacy
+    temperature-only artifact for the hyperparameter lift. LSTM is rebuilt
+    with `target=sensor` regardless so its head matches the eval target.
+    """
+    per_sensor_paths = {
+        "arima": ARTIFACTS_DIR / f"arima_{sensor}.pkl",
+        "sarima": ARTIFACTS_DIR / f"sarima_{sensor}.pkl",
+        "lstm": ARTIFACTS_DIR / f"lstm_{sensor}",
+    }
+    legacy_paths = {
         "arima": ARTIFACTS_DIR / "arima.pkl",
         "sarima": ARTIFACTS_DIR / "sarima.pkl",
         "lstm": ARTIFACTS_DIR / "lstm",
@@ -73,13 +87,17 @@ def _build_forecaster(name: str):
         "lstm": LstmForecaster,
     }
     cls = cls_map[name]
-    art = artifact_paths[name]
+    art = per_sensor_paths[name] if per_sensor_paths[name].exists() else legacy_paths[name]
     if not art.exists():
+        if name == "lstm":
+            return LstmForecaster(target=sensor)
         return cls()
     loaded = cls()
     try:
         loaded.load(art)
     except Exception:
+        if name == "lstm":
+            return LstmForecaster(target=sensor)
         return cls()
     if name == "arima":
         return ArimaForecaster(order=loaded.order)
@@ -94,6 +112,7 @@ def _build_forecaster(name: str):
             window=loaded.window,
             epochs=loaded.epochs,
             batch_size=loaded.batch_size,
+            target=sensor,
         )
     return cls()
 
@@ -280,12 +299,8 @@ def _evaluate_sensor(
 
     runs: list[DetectorRun] = []
     for name in selected:
-        # LSTM-residual targets `temperature` internally; skip it for other sensors.
-        if name == "lstm_residual" and sensor != "temperature":
-            print(f"  Skipping {name} (hardcoded to temperature target)")
-            continue
         try:
-            det = _build_detector(name)
+            det = _build_detector(name, sensor=sensor)
             print(f"  Fitting + scoring {name}...")
             run = score_detector(
                 det, train, test_perturbed, test_labels,

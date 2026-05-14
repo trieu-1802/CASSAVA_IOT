@@ -1,7 +1,10 @@
-"""POST /detect -- run all loaded detectors against a single (time, value).
+"""POST /detect -- run sensor-specific detectors against a single (time, value).
 
-Returns each detector's per-method verdict plus a combined `is_anomaly`
-(OR over methods). Forecasters are NOT run here; for forecasting see /forecast.
+Each weather sensor has its own fitted detectors (zscore + seasonal_zscore).
+We look them up by `sensorId`, run them all, and return per-method verdicts
+plus a combined `is_anomaly` (OR over methods).
+
+Forecasters are NOT run here; for forecasting see /forecast.
 """
 from __future__ import annotations
 
@@ -22,10 +25,18 @@ def detect(req: DetectRequest) -> DetectResponse:
     if not DETECTORS:
         raise HTTPException(503, "No detectors registered -- see startup logs")
 
+    dets = DETECTORS.get(req.sensor_id)
+    if not dets:
+        raise HTTPException(
+            404,
+            f"No detectors registered for sensorId={req.sensor_id}. "
+            f"Available: {list(DETECTORS.keys())}",
+        )
+
     ts = pd.Timestamp(req.time)
     verdicts: list[MethodVerdict] = []
     any_anomaly = False
-    for name, det in DETECTORS.items():
+    for name, det in dets.items():
         try:
             result = det.score(req.value, ts, k=3.0)
             verdicts.append(
@@ -39,7 +50,7 @@ def detect(req: DetectRequest) -> DetectResponse:
             )
             any_anomaly = any_anomaly or result.is_anomaly
         except Exception:
-            logger.exception("Detector %s failed during scoring", name)
+            logger.exception("Detector %s/%s failed during scoring", req.sensor_id, name)
             verdicts.append(MethodVerdict(name=name, score=0.0, is_anomaly=False))
 
     return DetectResponse(
