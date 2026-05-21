@@ -10,9 +10,12 @@
     python -m scripts.train --model all
 
     # Per-sensor: train ARIMA + SARIMA for every weather sensor.
-    # LSTM is multivariate around the temperature target → only fits on temperature.
+    # LSTM is multi-target (1 model predicts all 5 sensors at once) → --sensor
+    # is ignored for LSTM; one `--model lstm` run produces one `artifacts/lstm/`
+    # artifact that serves every sensor at inference time.
     python -m scripts.train --model arima  --sensor all
     python -m scripts.train --model sarima --sensor all
+    python -m scripts.train --model lstm
     python -m scripts.train --model all    --sensor all
 
     # Auto-select orders by AIC stepwise search:
@@ -25,9 +28,12 @@
     python -m scripts.train --model arima --test-months 3
     python -m scripts.train --model lstm --test-months 0
 
-Artifacts are saved per-sensor as `{model}_{sensor}.pkl` (e.g.
-`arima_temperature.pkl`, `sarima_rain.pkl`). LSTM stays as a single
-multivariate artifact at `lstm/` (temperature target only).
+Artifacts:
+- ARIMA / SARIMA: per-sensor `{model}_{sensor}.pkl` (e.g. `arima_temperature.pkl`,
+  `sarima_rain.pkl`). One artifact per sensor.
+- LSTM: single multi-target artifact at `lstm/` — one model predicts all 5
+  features (Dense(5) output). At inference, the caller picks one output via
+  `LstmForecaster(target=<sensor>)`. So --sensor is ignored for LSTM.
 
 The **last 1 month** of the CSV is excluded from training and reserved as a
 held-out test set — matched by the same 1-month split in `evaluate_detection`
@@ -175,16 +181,20 @@ def train_sarima(df: pd.DataFrame, sensor: str, auto_order: bool = False) -> Non
     print(f"  Saved -> {out} (residual_std={det.residual_std:.3f})")
 
 
-def train_lstm(df: pd.DataFrame, sensor: str) -> None:
-    # LSTM is multivariate (inputs = all 5 weather columns) and targets the
-    # `sensor` column. Each sensor gets its own LSTM artifact at
-    # ARTIFACTS_DIR / f"lstm_{sensor}".
-    det = LstmForecaster(target=sensor)
-    print(f"[LSTM] Training target={sensor} (window={det.window}, epochs={det.epochs})... (slow)")
+def train_lstm(df: pd.DataFrame) -> None:
+    # LSTM is multivariate AND multi-target: 1 model jointly predicts all
+    # 5 weather features (Dense(5) output). Single artifact at
+    # ARTIFACTS_DIR / "lstm" serves every sensor — callers pick the target
+    # view at load-time. So --sensor is ignored for LSTM training.
+    det = LstmForecaster()
+    print(f"[LSTM] Training multi-target (window={det.window}, epochs={det.epochs})... (slow)")
     det.fit(df)
-    out = ARTIFACTS_DIR / f"lstm_{sensor}"
+    out = ARTIFACTS_DIR / "lstm"
     det.save(out)
-    print(f"  Saved -> {out} (residual_std={det.residual_std:.3f})")
+    print(f"  Saved -> {out}")
+    print(f"  residual_std per target:")
+    for sensor_name, std in det._residual_std_by_target.items():
+        print(f"    {sensor_name:<20} {std:.3f}")
 
 
 def main() -> None:
@@ -237,8 +247,13 @@ def main() -> None:
             # SARIMA uses statsforecast AutoARIMA which handles full-data search
             # natively; --auto-search-size only affects ARIMA's pmdarima path.
             train_sarima(df, sensor, auto_order=args.auto_order)
-        if args.model in ("lstm", "all"):
-            train_lstm(df, sensor)
+
+    # LSTM is multi-target by construction (Dense(5) predicts all 5 sensors).
+    # Train ONCE regardless of --sensor; `--sensor all` doesn't multiply LSTM
+    # work the way it does for ARIMA / SARIMA.
+    if args.model in ("lstm", "all"):
+        print(f"\n=== Training LSTM (multi-target, all 5 sensors at once) ===")
+        train_lstm(df)
 
 
 if __name__ == "__main__":

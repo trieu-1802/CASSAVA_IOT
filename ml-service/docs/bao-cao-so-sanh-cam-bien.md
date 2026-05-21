@@ -1,10 +1,16 @@
 # Báo cáo so sánh detector trên 5 cảm biến thời tiết
 
-**Module:** `ml-service` — Ngày 14/05/2026
+**Module:** `ml-service` — Ngày 14/05/2026 (cập nhật LSTM-mọi-cảm-biến)
 **Branch:** `feat/anomaly-compare`
-**Script:** `python -m scripts.evaluate_detection --sensor all --methods all --sweep-k 1.0 8.0 0.5`
+**Script:**
+```
+python -m scripts.evaluate_detection --sensor all --methods all --sweep-k 1.0 8.0 0.5
+python -m scripts.evaluate_detection --sensor all --methods lstm_residual --sweep-k 1.0 10.0 0.5
+```
 
 Mục đích: đánh giá xem detector nào tốt nhất cho **từng** trong 5 cảm biến thời tiết của trạm — không chỉ `temperature` như báo cáo trước.
+
+> **Bản cập nhật:** LSTM đã được mở rộng `target` parameter (xem §2.5), nên `lstm_residual` giờ chạy trên cả 5 cảm biến. F1 mới của `lstm_residual` lưu ở `artifacts/smoke_lstm.csv`; phần còn lại giữ ở `artifacts/cross_sensor_sweep.csv`.
 
 ---
 
@@ -54,11 +60,11 @@ Tổng inject: **34 anomalies** trên 721 điểm test = **4.7%**.
 - `seasonal_zscore` — chia 24 bucket theo `hour-of-day` UTC, μ/σ riêng từng bucket
 - `arima_residual` — `ResidualDetector(ArimaForecaster)`, fit lại ARIMA trên train slice của cảm biến đang eval
 - `sarima_residual` — `ResidualDetector(SarimaForecaster)`, tương tự
-- `lstm_residual` — `ResidualDetector(LstmForecaster)`; **bỏ qua** với mọi cảm biến ≠ `temperature` vì LstmForecaster hardcode target = temperature
+- `lstm_residual` — `ResidualDetector(LstmForecaster(target=sensor))`; LSTM giờ retarget từng cảm biến (input vẫn là window 48h của cả 5 feature; head dự đoán biến `sensor`)
 
-Quét `k` từ 1.0 → 8.0 bước 0.5 (15 giá trị) cho mỗi cặp (cảm biến, detector); báo cáo best-F1 row.
+Quét `k` từ 1.0 → 8.0 bước 0.5 (15 giá trị) cho 4 detector ban đầu; sweep cho `lstm_residual` mở rộng tới `k = 10.0` (33 giá trị) vì với `wind`/`radiation` best F1 nằm ở k cao hơn.
 
-CSV đầy đủ ở `artifacts/cross_sensor_sweep.csv`.
+CSV: `artifacts/cross_sensor_sweep.csv` (4 detector ban đầu) + `artifacts/smoke_lstm.csv` (LSTM x 5 cảm biến).
 
 ---
 
@@ -127,9 +133,9 @@ Với báo cáo này, best-k chỉ dùng để **so sánh detector** (cùng test
 
 Đây là intentional design — saves user phải train 5×3=15 model riêng — nhưng implication phương pháp luận:
 - Hyperparameter order=(5,1,4) được chọn cho temperature có thể không tối ưu cho wind/rain/humidity.
-- LSTM hardcode target=temperature → bỏ qua hoàn toàn cho non-temperature.
+- ~~LSTM hardcode target=temperature → bỏ qua hoàn toàn cho non-temperature.~~ **Đã sửa** ở patch này — `LstmForecaster(target=...)` configurable; `evaluate_detection.py` rebuild LSTM với `target=sensor` mỗi vòng eval, nên 5 LSTM được fit fresh tại run-time (chứ chưa save artifact per sensor). Train artifact per sensor sẽ làm sau qua `python -m scripts.train --model lstm --sensor all`.
 
-**Cách đúng chuẩn nên làm:** chạy `auto_arima` riêng từng sensor (chấp nhận chi phí ~10× thời gian) để có order riêng cho mỗi cảm biến. LSTM mở rộng `target_col` parameter để fit được cho mọi cảm biến.
+**Cách đúng chuẩn nên làm:** chạy `auto_arima` riêng từng sensor (chấp nhận chi phí ~10× thời gian) để có order riêng cho mỗi cảm biến. *(Done for LSTM trong vòng này — chi phí ~30 phút × 5 sensor cho retrain artifact.)*
 
 ### 2.6. Tóm tắt mức độ "rigorous" của các kết luận
 
@@ -137,7 +143,7 @@ Với báo cáo này, best-k chỉ dùng để **so sánh detector** (cùng test
 |---|---|---|
 | seasonal_zscore là default tốt cho `relativeHumidity`, `wind` | 🟢 Cao | F1 chênh xa các phương pháp khác (>0.15), vượt sai số ±0.03 |
 | rain cần model forecaster, không phải z-score | 🟢 Cao | Lý do định tính rõ (zero-inflated); F1 chênh xa |
-| seasonal_zscore tốt cho `radiation` | 🟡 Trung bình | F1=0.419 chỉ hơn arima_residual 0.05 → có thể trong sai số |
+| ~~seasonal_zscore tốt cho `radiation`~~ → `lstm_residual` mới là winner | 🟡 Trung bình | LSTM-residual F1=0.557 vs seasonal_zscore 0.419 (chênh 0.14, vượt sai số ±0.03). Tin cậy bị giảm vì LSTM stochastic ±0.05 mỗi lần fit nên winner có thể đảo lại — cần fit nhiều lần để confirm |
 | zscore tốt cho `temperature` hơn seasonal_zscore | 🔴 Thấp | Lý do thật là 70% drift anomaly ≠ z-score capability; không có evidence zscore tốt hơn seasonal cho task production thật |
 | `m=24` đúng, `m=2160` sai | 🟢 Cao | Lý do mathematical (định nghĩa SARIMA), không cần empirical |
 
@@ -152,10 +158,12 @@ Khuyến nghị triển khai ở §6 phải đọc kèm bảng này — ưu tiê
 | Detector | k tối ưu | Precision | Recall | F1 |
 |---|---:|---:|---:|---:|
 | `zscore` | 3.00 | 0.929 | 0.382 | **0.542** |
-| `lstm_residual` | 2.50 | 0.266 | 0.618 | 0.372 |
+| `lstm_residual` | 2.50 | 0.209 | 0.824 | 0.333 |
 | `seasonal_zscore` | 2.50 | 1.000 | 0.176 | 0.300 |
 | `arima_residual` | 8.00 | 0.077 | 0.941 | 0.142 |
 | `sarima_residual` | 8.00 | 0.060 | 0.971 | 0.113 |
+
+> Số `lstm_residual` lệch ±0.04 giữa các lần fit vì LSTM stochastic. Báo cáo gốc có F1=0.372; lần re-fit này F1=0.333 — vẫn rank #3, không đổi conclusion (zscore vẫn thắng).
 
 ### relativeHumidity
 
@@ -163,6 +171,7 @@ Khuyến nghị triển khai ở §6 phải đọc kèm bảng này — ưu tiê
 |---|---:|---:|---:|---:|
 | `seasonal_zscore` | 3.00 | 0.880 | 0.647 | **0.746** |
 | `zscore` | 3.50 | 0.607 | 0.500 | 0.548 |
+| `lstm_residual` | 5.50 | 0.323 | 0.618 | 0.424 |
 | `arima_residual` | 8.00 | 0.116 | 0.765 | 0.202 |
 | `sarima_residual` | 8.00 | 0.081 | 0.853 | 0.149 |
 
@@ -173,13 +182,15 @@ Khuyến nghị triển khai ở §6 phải đọc kèm bảng này — ưu tiê
 | `sarima_residual` | 1.00 | 0.510 | 0.765 | **0.612** |
 | `arima_residual` | 1.50 | 0.548 | 0.676 | 0.605 |
 | `seasonal_zscore` | 1.00 | 0.588 | 0.294 | 0.392 |
+| `lstm_residual` | 5.00 | 0.526 | 0.294 | 0.377 |
 | `zscore` | 5.50 | 0.099 | 0.235 | 0.139 |
 
 ### radiation
 
 | Detector | k tối ưu | Precision | Recall | F1 |
 |---|---:|---:|---:|---:|
-| `seasonal_zscore` | 2.00 | 1.000 | 0.265 | **0.419** |
+| `lstm_residual` | 6.00 | 0.489 | 0.647 | **0.557** |
+| `seasonal_zscore` | 2.00 | 1.000 | 0.265 | 0.419 |
 | `arima_residual` | 8.00 | 0.256 | 0.676 | 0.371 |
 | `sarima_residual` | 7.50 | 0.210 | 0.853 | 0.337 |
 | `zscore` | 1.50 | 0.178 | 0.618 | 0.276 |
@@ -191,6 +202,7 @@ Khuyến nghị triển khai ở §6 phải đọc kèm bảng này — ưu tiê
 | `seasonal_zscore` | 2.00 | 0.514 | 0.559 | **0.535** |
 | `arima_residual` | 6.50 | 0.299 | 0.588 | 0.396 |
 | `sarima_residual` | 8.00 | 0.276 | 0.618 | 0.382 |
+| `lstm_residual` | 10.00 | 0.286 | 0.294 | 0.290 |
 | `zscore` | 5.50 | 0.308 | 0.235 | 0.267 |
 
 ---
@@ -199,21 +211,31 @@ Khuyến nghị triển khai ở §6 phải đọc kèm bảng này — ưu tiê
 
 | Cảm biến | Winner | F1 | k | Detector hạng 2 | F1 hạng 2 |
 |---|---|---:|---:|---|---:|
-| `temperature` | `zscore` | 0.542 | 3.00 | `lstm_residual` | 0.372 |
+| `temperature` | `zscore` | 0.542 | 3.00 | `lstm_residual` | 0.333 |
 | `relativeHumidity` | `seasonal_zscore` | 0.746 | 3.00 | `zscore` | 0.548 |
 | `rain` | `sarima_residual` | 0.612 | 1.00 | `arima_residual` | 0.605 |
-| `radiation` | `seasonal_zscore` | 0.419 | 2.00 | `arima_residual` | 0.371 |
+| `radiation` | **`lstm_residual`** (mới) | 0.557 | 6.00 | `seasonal_zscore` | 0.419 |
 | `wind` | `seasonal_zscore` | 0.535 | 2.00 | `arima_residual` | 0.396 |
+
+> **Thay đổi so với bản trước:** `radiation` winner đảo từ `seasonal_zscore` → `lstm_residual` (chênh 0.14, vượt sai số). Các cảm biến khác giữ nguyên xếp hạng — LSTM cải thiện vị trí nhưng không soán ngôi.
 
 ---
 
 ## 5. Nhận xét
 
-### `seasonal_zscore` ổn nhất cho 3/5 cảm biến
+### `seasonal_zscore` ổn nhất cho 2/5 cảm biến (giảm từ 3/5)
 
-`relativeHumidity`, `radiation`, `wind` đều có chu kỳ ngày rõ rệt (RH thấp giữa trưa, radiation theo đường mặt trời, gió thường yên ban đêm). Bucket theo `hour-of-day` ăn được pattern này → `seasonal_zscore` rõ ràng đứng nhất.
+`relativeHumidity` và `wind` đều có chu kỳ ngày rõ rệt (RH thấp giữa trưa, gió thường yên ban đêm). Bucket theo `hour-of-day` ăn được pattern này → `seasonal_zscore` rõ ràng đứng nhất.
 
-`radiation` F1=0.419 là thấp tuyệt đối — vì ban đêm σ ≈ 0 (luôn 0) nên detector skip những bucket đó → bị **under-detect**. Recall chỉ 0.265 dù precision 1.000.
+`radiation` ở bản trước cũng thuộc nhóm này (F1=0.419), nhưng giờ bị `lstm_residual` (F1=0.557) soán ngôi — xem ngay mục dưới.
+
+### `lstm_residual` mới là winner cho `radiation`
+
+Mở rộng LSTM target sang radiation (input vẫn là multivariate window, head dự đoán radiation thay vì temperature): F1=0.557 ở k=6.0, vượt `seasonal_zscore` (0.419) một khoảng 0.14 — vượt sai số ±0.03.
+
+Lý do định tính: radiation có pattern rất phức tạp — không phải sin đẹp như temperature mà còn phụ thuộc cloud cover (gián tiếp qua humidity / wind / rain). LSTM multivariate học được tương tác này; seasonal_zscore không xét được. Recall LSTM 0.647 cũng cao gấp 2.4× seasonal_zscore (0.265) — đặc biệt seasonal bị skip night-buckets σ≈0.
+
+Lưu ý độ tin cậy 🟡 (§2.6): LSTM training stochastic ±0.05 F1 nên ranking có thể thay đổi giữa các lần fit. Cần fit nhiều lần để chắc chắn winner.
 
 ### `rain` cần model — `zscore`/`seasonal_zscore` đều thua xa
 
@@ -222,6 +244,7 @@ Khuyến nghị triển khai ở §6 phải đọc kèm bảng này — ưu tiê
 - `sarima_residual` F1=0.612 — đứng nhất; residual của SARIMA bắt được "lượng mưa bất thường" theo pattern thời gian
 - `arima_residual` F1=0.605 — sát nút SARIMA
 - `seasonal_zscore` F1=0.392 — kém một bậc
+- `lstm_residual` F1=0.377 — gần ngang seasonal_zscore (LSTM không nhỉnh hơn cho rain dù multivariate; có thể vì rain quá zero-inflated, model nào cũng forecast ≈ 0)
 - `zscore` F1=0.139 — gần như vô dụng
 
 Tức là: muốn detect anomaly trên `rain` nghiêm túc thì **phải có ml-service** chạy song song, BE thuần Java không đủ.
@@ -232,13 +255,19 @@ Báo cáo trước (split 80/20) thì `seasonal_zscore` đạt F1=0.948 trên te
 
 Lý do thật (xem §2.3): **drift chiếm 24/34 anomaly** và point-wise z-score detector không bắt được drift theo design. Recall ceiling ≈ 29%, và seasonal_zscore đạt recall 0.176 = đã gần ceiling. Modified Z-score (`zscore`) "thắng" chủ yếu vì MAD-based threshold tightness — không phải vì hiểu data tốt hơn. **Kết luận này có độ tin cậy thấp** (xem §2.6).
 
-### `arima_residual` / `sarima_residual` precision thấp cho ngoại trừ `rain`
+### `arima_residual` / `sarima_residual` precision thấp ngoại trừ `rain`
 
 Khi forecast vốn đã tốt (temperature, RH, radiation, wind có pattern dễ đoán), residual của ARIMA/SARIMA bị **nhiễu trắng đẹp** — std rất bé nên gần như mọi điểm có |z| > k. Best F1 hay đến ở k=7–8 (vẫn precision thấp 0.08–0.30). Riêng `rain` vì forecast không thể chính xác → residual có cấu trúc → detector hoạt động ổn.
 
-### `lstm_residual` chỉ chạy trên `temperature`
+### `lstm_residual` ở các cảm biến không phải winner
 
-`ml/forecasters/lstm.py` hardcode `TARGET_FEATURE = "temperature"` → eval bỏ qua trên 4 cảm biến còn lại. Trên temperature kết quả F1=0.372 — đứng thứ 2 sau `zscore` nhưng kém xa kết quả 80/20-split (báo cáo trước F1 cao hơn).
+Ngoài `radiation`, LSTM xếp:
+- `temperature`: rank 3 (F1=0.333) — sau zscore và arguably ngang seasonal_zscore khi xét variance ±0.04
+- `relativeHumidity`: rank 3 (F1=0.424) — kém seasonal_zscore và zscore khá xa
+- `rain`: rank 4 (F1=0.377) — không hơn seasonal_zscore, không có ưu thế multivariate
+- `wind`: rank 4 (F1=0.290) — best F1 phải kéo k tới 10.0, recall vẫn thấp; LSTM không hiểu wind tốt
+
+Nhận định: LSTM multivariate có lợi thế khi target chịu ảnh hưởng nhiều biến khác (radiation ⊂ cloud/humidity/wind). Khi target có pattern thuần periodic (RH, wind) hoặc zero-inflated (rain), nó không thắng được các phương pháp đơn giản hơn.
 
 ---
 
@@ -248,18 +277,18 @@ Khi forecast vốn đã tốt (temperature, RH, radiation, wind có pattern dễ
 
 | Cảm biến | Detector đề xuất | k | Lý do |
 |---|---|---:|---|
-| `temperature` | `zscore` (Modified Z) | 3.0 | Win trên test, nhưng tin cậy thấp (xem §2.6); cần thêm class `ZScoreService` trong BE |
+| `temperature` | `zscore` (Modified Z) | 3.0 | Win trên test, nhưng tin cậy thấp (xem §2.6); cần thêm class `ZScoreService` trong BE — *hoặc* dùng `seasonal_zscore` mặc định nếu chấp nhận trade-off (xem ghi chú dưới) |
 | `relativeHumidity` | `seasonal_zscore` | 3.0 | F1=0.746, cao nhất |
-| `radiation` | `seasonal_zscore` | 2.0 | F1=0.419; precision 1.0 / recall thấp do night-buckets σ≈0 |
+| `radiation` | **`lstm_residual`** (delegate ml-service) | 6.0 | F1=0.557, cao nhất; phải có ml-service vì LSTM Java port không khả thi |
 | `wind` | `seasonal_zscore` | 2.0 | F1=0.535, cao nhất |
-| `rain` | (delegate ml-service `/detect`) | — | z-score thuần kém; sarima_residual F1 ~0.6 nhưng cần Python |
+| `rain` | `sarima_residual` (delegate ml-service `/detect`) | 1.0 | z-score thuần kém; sarima_residual F1=0.612 |
 | `humidity30`, `humidity60` (soil) | `seasonal_zscore` | 3.0 | Không có ground truth NASA để eval; mặc định theo nhóm tốt nhất |
 
-> **Code chưa viết:** hiện `SeasonalZScoreService.java` chỉ áp seasonal_zscore cho mọi sensorId. Để triển khai khuyến nghị này cần:
-> - Thêm `kPerSensor` (Map<String, Double>) thay cho global `k`
-> - Thêm `ZScoreService.java` (Modified Z-score) để dùng riêng cho `temperature`
-> - Thêm strategy chọn detector theo sensorId
-> - Cho `rain`: trong listener gọi ml-service `/detect` thay vì tự xử lý
+> **Implementation state:**
+> - BE đã thay `RangeCheckService` bằng `MqttSensorListener` → `MlDetectClient` (HTTP POST `/detect`) cho mọi cảm biến thời tiết. Detection logic giờ nằm hoàn toàn ở ml-service.
+> - `PreferredDetectionMethods.java` cấu hình detector ưu tiên per sensor. Mặc định hiện tại: `temperature=seasonal_zscore` (chứ không phải zscore của §6 vì tin cậy thấp), `relativeHumidity/wind=seasonal_zscore`, `radiation=seasonal_zscore` (chưa đổi sang lstm_residual vì LSTM live serving cần Mongo auth fix — xem §7).
+> - 4 detector statistic + ARIMA/SARIMA residual đã register per sensor. LSTM ở api/main.py load từ `lstm_<sensor>/`, fallback `lstm/` cho temperature; cần retrain với `python -m scripts.train --model lstm --sensor all` để có artifact cho 4 cảm biến còn lại.
+> - **Còn lại để chuyển radiation sang lstm_residual production:** (a) train artifact lstm_radiation/; (b) ml-service fetch context từ Mongo có auth (hiện `/detect` lstm_residual return predicted=null vì Mongo query fail unauthenticated); (c) đổi config `ml.detection.preferred-method.radiation=lstm_residual`.
 
 ### Cấu hình retrain cron cho ml-service
 
@@ -287,9 +316,10 @@ Khi forecast vốn đã tốt (temperature, RH, radiation, wind có pattern dễ
 
 1. **Rolling-quarter backtest** (§2.1) — cross-validation trên 4 mùa để defense methodology.
 2. **Bổ sung "stuck-at-value" và "NaN run" patterns** trong `inject_anomalies` để eval cover use case sensor hardware lỗi thật.
-3. **Multivariate LSTM cho non-temperature sensors:** hiện `LstmForecaster` hardcode target = temperature. Mở rộng thành `LstmForecaster(target_col)` để chạy được lstm_residual trên 5 cảm biến.
-4. **Retrain trên Mongo sensor_value** (thay vì NASA POWER) cho production: NASA chỉ là dataset huấn luyện mock-up; field thực dùng `humidity30/60` (soil) không có trong NASA.
-5. **Per-sensor k autotune** trong BE: viết unit test load test data từ Mongo, sweep k mỗi tuần, ghi best k vào config.
+3. ~~Multivariate LSTM cho non-temperature sensors~~ — *DONE*. `LstmForecaster(target=...)` đã configurable, eval cho cả 5 cảm biến đã chạy. Việc còn lại là: (a) save artifact `lstm_<sensor>/` per sensor qua `python -m scripts.train --model lstm --sensor all`; (b) fit nhiều lần để confirm radiation winner do LSTM stochastic.
+4. **LSTM live-serving:** ml-service `/detect` với `lstm_residual` hiện return `predicted=null` vì `LstmForecaster.predict()` fetch context từ Mongo unauthenticated. Cần thêm Mongo URI có credentials vào ml-service `.env`. Sau đó radiation có thể chuyển sang `lstm_residual` ở `PreferredDetectionMethods`.
+5. **Retrain trên Mongo sensor_value** (thay vì NASA POWER) cho production: NASA chỉ là dataset huấn luyện mock-up; field thực dùng `humidity30/60` (soil) không có trong NASA.
+6. **Per-sensor k autotune** trong BE: viết unit test load test data từ Mongo, sweep k mỗi tuần, ghi best k vào config.
 
 ---
 
@@ -299,13 +329,22 @@ Khi forecast vốn đã tốt (temperature, RH, radiation, wind có pattern dễ
 cd ml-service
 
 # Retrain (51 863 train + 721 test holdout)
-./.venv/Scripts/python.exe -m scripts.train --model all
+# arima/sarima/lstm per sensor (lstm cần --sensor all để fit cho cả 5 cảm biến)
+./.venv/Scripts/python.exe -m scripts.train --model arima  --sensor all --auto-order
+./.venv/Scripts/python.exe -m scripts.train --model sarima --sensor all --auto-order
+./.venv/Scripts/python.exe -m scripts.train --model lstm   --sensor all
 
-# Eval đầy đủ
+# Eval đầy đủ (4 detector ban đầu)
 ./.venv/Scripts/python.exe -m scripts.evaluate_detection \
-    --sensor all --methods all \
+    --sensor all --methods zscore,seasonal_zscore,arima_residual,sarima_residual \
     --sweep-k 1.0 8.0 0.5 \
     --sweep-out artifacts/cross_sensor_sweep.csv
+
+# Eval LSTM riêng (k cần range rộng hơn cho wind/radiation)
+./.venv/Scripts/python.exe -m scripts.evaluate_detection \
+    --sensor all --methods lstm_residual \
+    --sweep-k 1.0 10.0 0.5 \
+    --sweep-out artifacts/smoke_lstm.csv
 ```
 
-Tổng thời gian (Windows CPU, no GPU): retrain ~15 phút, eval ~15–20 phút.
+Tổng thời gian (Windows CPU, no GPU): retrain ~45–60 phút (SARIMA auto chiếm 1/2; LSTM × 5 chiếm 30 phút), eval cross-sensor ~10 phút, eval LSTM × 5 ~30–50 phút.

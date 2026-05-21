@@ -1,24 +1,30 @@
-"""LSTM forecaster — multivariate, trained on NASA POWER hourly data.
+"""LSTM forecaster — multivariate, multi-target.
 
 Input: 48-hour window of (temperature, relativeHumidity, wind, rain, radiation).
-Output: predicted next-hour value of the configured `target` feature
-(default: temperature).
+Output: predicted next-hour value of **all 5** features (Dense(5)).
 
-Training data comes from NASA POWER (3+ years), giving the model a broad
-view of "typical" weather patterns. At prediction time, we query the last
-48 hours of MQTT sensor data from Mongo and ask the LSTM to predict the
-next hour's target.
+A single trained model serves every weather sensor: at inference time the
+caller picks one output via the `target` parameter. `target` is a *view*
+on a shared multi-output model — it does NOT affect training (training is
+joint over all 5 columns with MSE summed across them).
+
+Training data comes from NASA POWER (3+ years). At prediction time, we
+query the last 48 hours of MQTT sensor data from Mongo (or an injected
+offline context) and ask the LSTM to predict the next-hour values of all
+5 features; the caller's `target` selects which scalar to return.
 
 Architecture (small on purpose -- limited training data):
-    LSTM(64) -> Dropout(0.2) -> Dense(32, relu) -> Dense(1)
+    LSTM(64) -> Dropout(0.2) -> Dense(32, relu) -> Dense(5)
 
-Multi-step horizons (`predict(time, h>1)`) are produced by iterative roll-forward:
-each step's predicted target value is fed back into the window with the other
-features held at their last observed values. Crude but cheap; for richer
-horizons retrain with seq2seq output.
+Multi-step horizons (`predict(time, h>1)`) are produced by iterative
+roll-forward: at each step the predicted 5-vector replaces the oldest
+row of the window so the next step has self-consistent multivariate
+context. Crude but cheap; for richer horizons retrain with seq2seq output.
 
-To turn this into an anomaly detector, wrap with
-`ml.detectors.ResidualDetector(LstmForecaster(target=sensor))`.
+To turn this into an anomaly detector for a specific sensor, wrap with
+`ml.detectors.ResidualDetector(LstmForecaster(target=sensor))`. The
+wrapper uses `residual_std` for that target (calibrated per-target at
+fit/load time).
 """
 from __future__ import annotations
 
@@ -56,7 +62,10 @@ class LstmForecaster(Forecaster):
         self.target = target
         self.target_idx = LSTM_FEATURES.index(target)
         self._scaler = None  # sklearn MinMaxScaler
-        self._model = None   # Keras model
+        self._model = None   # Keras model with Dense(len(LSTM_FEATURES)) output
+        # `residual_std` mirrors `self._residual_std_by_target[self.target]`
+        # so ResidualDetector wrappers see the right sigma per target view.
+        self._residual_std_by_target: dict[str, float] = {}
         # Offline-evaluation context: when set, predict() pulls the 48h window
         # from this DataFrame instead of querying Mongo. Used by the offline
         # evaluator that has no Mongo data flow.
@@ -71,10 +80,15 @@ class LstmForecaster(Forecaster):
         """
         self._offline_context = multivariate_df
 
-    # ---- training (NASA multivariate) ------------------------------------
+    # ---- training (NASA multivariate, multi-target) ---------------------
 
     def fit(self, multivariate_df: pd.DataFrame) -> None:
-        """Train on a NASA-style multivariate hourly DataFrame."""
+        """Train on a NASA-style multivariate hourly DataFrame.
+
+        The model is trained jointly to predict all 5 features at next step.
+        After fit, `_residual_std_by_target` holds per-target residual sigma
+        and `residual_std` exposes the value for `self.target`.
+        """
         from sklearn.preprocessing import MinMaxScaler  # noqa: PLC0415
         from tensorflow import keras  # noqa: PLC0415
 
@@ -85,7 +99,7 @@ class LstmForecaster(Forecaster):
         self._scaler = MinMaxScaler()
         scaled = self._scaler.fit_transform(df.values)
 
-        X, y = self._make_sequences(scaled)
+        X, Y = self._make_sequences(scaled)
 
         self._model = keras.Sequential(
             [
@@ -93,35 +107,44 @@ class LstmForecaster(Forecaster):
                 keras.layers.LSTM(64, return_sequences=False),
                 keras.layers.Dropout(0.2),
                 keras.layers.Dense(32, activation="relu"),
-                keras.layers.Dense(1),
+                keras.layers.Dense(len(LSTM_FEATURES)),  # 5 outputs
             ]
         )
         self._model.compile(optimizer="adam", loss="mse")
-        self._model.fit(X, y, epochs=self.epochs, batch_size=self.batch_size, verbose=0)
+        self._model.fit(X, Y, epochs=self.epochs, batch_size=self.batch_size, verbose=0)
         self.fitted = True
 
-        yhat_scaled = self._model.predict(X, verbose=0).flatten()
-        predicted_target = self._inverse_target(yhat_scaled)
-        actual_target = df[self.target].iloc[self.window :].values
-        residuals = pd.Series(actual_target - predicted_target)
-        self._calibrate_residual_std(residuals)
+        # Calibrate residual_std per target so ResidualDetector wrappers
+        # threshold |residual| / sigma correctly for whichever sensor view.
+        Yhat_scaled = self._model.predict(X, verbose=0)  # (N, 5)
+        self._residual_std_by_target = {}
+        for idx, feature in enumerate(LSTM_FEATURES):
+            predicted = self._inverse_one_col(Yhat_scaled[:, idx], idx)
+            actual = df[feature].iloc[self.window :].values
+            residuals = actual - predicted
+            self._residual_std_by_target[feature] = float(np.std(residuals))
+        self.residual_std = self._residual_std_by_target[self.target]
 
     def _make_sequences(self, scaled: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        X, y = [], []
+        """Build training pairs. Y is the FULL 5-feature next-step vector."""
+        X, Y = [], []
         for i in range(len(scaled) - self.window):
             X.append(scaled[i : i + self.window])
-            y.append(scaled[i + self.window, self.target_idx])
-        return np.array(X), np.array(y)
+            Y.append(scaled[i + self.window])  # all 5 features at next step
+        return np.array(X), np.array(Y)
 
-    def _inverse_target(self, scaled_y: np.ndarray) -> np.ndarray:
-        """Inverse-transform a scaled target column back to the original units.
-        Scaler was fit on all features, so we pad the others with zeros.
+    def _inverse_one_col(self, scaled_col: np.ndarray, col_idx: int) -> np.ndarray:
+        """Inverse-transform one scaled column back to original units.
+
+        Scaler was fit on all 5 features, so we pad the other 4 with zeros.
+        The MinMax inverse is independent per column, so the padding values
+        don't matter — only the column we're extracting.
         """
-        pad = np.zeros((len(scaled_y), len(LSTM_FEATURES)))
-        pad[:, self.target_idx] = scaled_y
-        return self._scaler.inverse_transform(pad)[:, self.target_idx]
+        pad = np.zeros((len(scaled_col), len(LSTM_FEATURES)))
+        pad[:, col_idx] = scaled_col
+        return self._scaler.inverse_transform(pad)[:, col_idx]
 
-    # ---- prediction ------------------------------------------------------
+    # ---- prediction (returns target view; rolls forward all 5 features) -
 
     def predict(self, time: pd.Timestamp, horizon: int = 1) -> ForecastResult:
         if self._model is None or self._scaler is None:
@@ -132,20 +155,24 @@ class LstmForecaster(Forecaster):
         if len(context) < self.window:
             raise RuntimeError(f"Need {self.window} hours of context, got {len(context)}")
 
-        # Iterative roll-forward for horizon > 1: predict t+1, append (with
-        # other features held), predict t+2, etc.
+        # Roll forward consistently across all 5 features. Each step's full
+        # 5-vector prediction becomes the next window row, so the model's
+        # multivariate input stays self-consistent for h > 1.
         scaled_window = self._scaler.transform(context.values).copy()
         forecasts: list[float] = []
         for _ in range(horizon):
             X = scaled_window.reshape(1, self.window, len(LSTM_FEATURES))
-            yhat_scaled = float(self._model.predict(X, verbose=0)[0, 0])
-            predicted = float(self._inverse_target(np.array([yhat_scaled]))[0])
+            yhat_scaled_all = self._model.predict(X, verbose=0)[0]  # (5,)
+
+            # Extract the configured target column, inverse-transform → unit gốc
+            target_scaled = float(yhat_scaled_all[self.target_idx])
+            predicted = float(
+                self._inverse_one_col(np.array([target_scaled]), self.target_idx)[0]
+            )
             forecasts.append(predicted)
 
-            # Roll the window: drop oldest, append [yhat_scaled, last-features-unchanged]
-            next_row = scaled_window[-1].copy()
-            next_row[self.target_idx] = yhat_scaled
-            scaled_window = np.vstack([scaled_window[1:], next_row])
+            # Slide window: drop oldest, append the FULL 5-d prediction
+            scaled_window = np.vstack([scaled_window[1:], yhat_scaled_all])
 
         out_ts = pd.date_range(ts, periods=horizon, freq="h")
         return ForecastResult(
@@ -188,9 +215,10 @@ class LstmForecaster(Forecaster):
                     "window": self.window,
                     "epochs": self.epochs,
                     "batch_size": self.batch_size,
-                    "target": self.target,
                     "scaler": self._scaler,
-                    "residual_std": self.residual_std,
+                    "residual_std_by_target": self._residual_std_by_target,
+                    # New format marker; legacy single-target artifacts don't have it.
+                    "multi_target": True,
                 },
                 f,
             )
@@ -204,9 +232,30 @@ class LstmForecaster(Forecaster):
         self.window = d["window"]
         self.epochs = d["epochs"]
         self.batch_size = d["batch_size"]
-        # Legacy artifacts (pre-target field) default to temperature.
-        self.target = d.get("target", "temperature")
-        self.target_idx = LSTM_FEATURES.index(self.target)
         self._scaler = d["scaler"]
-        self.residual_std = d["residual_std"]
+
+        if d.get("multi_target"):
+            # New multi-output format: residual_std per target dict.
+            self._residual_std_by_target = d["residual_std_by_target"]
+            self.residual_std = self._residual_std_by_target.get(self.target)
+            if self.residual_std is None:
+                raise ValueError(
+                    f"Multi-target LSTM artifact at {path} has no calibrated "
+                    f"residual_std for target={self.target}; available targets: "
+                    f"{list(self._residual_std_by_target.keys())}"
+                )
+        else:
+            # Legacy single-output format (Dense(1), temperature-only target).
+            # Refuse to load with a non-temperature target since the model
+            # architecture can only emit temperature.
+            if self.target != "temperature":
+                raise ValueError(
+                    f"Legacy single-target LSTM artifact at {path} can only "
+                    f"predict 'temperature'; cannot serve target={self.target}. "
+                    f"Retrain via `python -m scripts.train --model lstm` to get "
+                    f"the new multi-target artifact."
+                )
+            self.residual_std = d["residual_std"]
+            self._residual_std_by_target = {"temperature": d["residual_std"]}
+
         self.fitted = True

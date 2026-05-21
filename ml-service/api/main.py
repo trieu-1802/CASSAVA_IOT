@@ -32,9 +32,10 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 NASA_CSV_PATH = ARTIFACTS_DIR / "nasa" / "training_data.csv"
-# Legacy temperature-only LSTM artifact. Loaded as a fallback for the
-# temperature sensor when no `lstm_temperature/` per-sensor artifact exists.
-LEGACY_LSTM_PATH = ARTIFACTS_DIR / "lstm"
+# Single multi-target LSTM artifact (Dense(5) output, predicts all 5 sensors).
+# At /detect and /forecast lookup we create one LstmForecaster instance per
+# sensor view sharing the same underlying Keras model + scaler.
+LSTM_PATH = ARTIFACTS_DIR / "lstm"
 
 # Weather sensors that get per-sensor models at startup. Must match the
 # canonical sensor ids resolved by the BE's MqttSensorTopics.
@@ -82,7 +83,10 @@ def _fit_detector(name: str, cls: type[AnomalyDetector], series: pd.Series) -> A
 
 
 def _register_sensor(sensor_id: str, nasa_df: pd.DataFrame | None) -> None:
-    """Populate DETECTORS[sensor_id] and FORECASTERS[sensor_id]."""
+    """Populate DETECTORS[sensor_id] and FORECASTERS[sensor_id] for the
+    non-LSTM models. LSTM is loaded once in `_register_lstm_views()` since
+    its artifact is shared across all sensor targets.
+    """
     detectors: dict[str, AnomalyDetector] = {}
     forecasters: dict[str, Forecaster] = {}
 
@@ -102,21 +106,56 @@ def _register_sensor(sensor_id: str, nasa_df: pd.DataFrame | None) -> None:
             forecasters[fc_name] = fc
             detectors[f"{fc_name}_residual"] = ResidualDetector(fc, name=f"{fc_name}_residual")
 
-    # LSTM is multivariate; one artifact per target sensor at lstm_<sensor>/.
-    # For temperature only, fall back to the legacy `lstm/` path if the
-    # per-sensor artifact doesn't exist yet.
-    lstm_path = ARTIFACTS_DIR / f"lstm_{sensor_id}"
-    if not lstm_path.exists() and sensor_id == "temperature":
-        lstm_path = LEGACY_LSTM_PATH
-    lstm = _load_forecaster(f"lstm/{sensor_id}", LstmForecaster, lstm_path)
-    if lstm is not None:
-        forecasters["lstm"] = lstm
-        detectors["lstm_residual"] = ResidualDetector(lstm, name="lstm_residual")
-
     if detectors:
         DETECTORS[sensor_id] = detectors
     if forecasters:
         FORECASTERS[sensor_id] = forecasters
+
+
+def _register_lstm_views() -> None:
+    """Load the single multi-target LSTM artifact and create one view per
+    sensor sharing the same underlying Keras model + scaler. Each view
+    exposes the right `residual_std` for its target so ResidualDetector
+    wrappers threshold correctly.
+    """
+    if not LSTM_PATH.exists():
+        logger.warning("LSTM artifact missing at %s -- LSTM detector/forecaster skipped", LSTM_PATH)
+        return
+
+    # Load once with target=temperature as the seed view.
+    try:
+        master = LstmForecaster(target="temperature")
+        master.load(LSTM_PATH)
+        logger.info("Loaded multi-target LSTM from %s", LSTM_PATH)
+    except Exception:
+        logger.exception("Failed to load LSTM from %s -- skipping", LSTM_PATH)
+        return
+
+    available_targets = list(master._residual_std_by_target.keys())
+    for sensor_id in WEATHER_SENSORS:
+        if sensor_id not in available_targets:
+            logger.warning(
+                "LSTM artifact has no calibrated residual_std for %s "
+                "(available targets: %s); skipping lstm_residual/%s",
+                sensor_id, available_targets, sensor_id,
+            )
+            continue
+        view = LstmForecaster(target=sensor_id)
+        # Share the heavy state across views — only the target / target_idx /
+        # residual_std differ.
+        view._model = master._model
+        view._scaler = master._scaler
+        view.window = master.window
+        view.epochs = master.epochs
+        view.batch_size = master.batch_size
+        view._residual_std_by_target = master._residual_std_by_target
+        view.residual_std = master._residual_std_by_target[sensor_id]
+        view.fitted = True
+
+        FORECASTERS.setdefault(sensor_id, {})["lstm"] = view
+        DETECTORS.setdefault(sensor_id, {})["lstm_residual"] = ResidualDetector(
+            view, name="lstm_residual"
+        )
 
 
 @asynccontextmanager
@@ -137,6 +176,9 @@ async def lifespan(app: FastAPI):
 
     for sensor_id in WEATHER_SENSORS:
         _register_sensor(sensor_id, nasa_df)
+
+    # LSTM is multi-target — one artifact serves every sensor view.
+    _register_lstm_views()
 
     logger.info(
         "ml-service starting; detectors=%s, forecasters=%s",

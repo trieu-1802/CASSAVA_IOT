@@ -66,15 +66,18 @@ def _build_detector(name: str, sensor: str = "temperature") -> AnomalyDetector:
 def _build_forecaster(name: str, sensor: str = "temperature"):
     """Build a forecaster, lifting hyperparameters from its artifact if present.
 
-    Per-sensor artifacts (`arima_<sensor>.pkl`, `sarima_<sensor>.pkl`,
-    `lstm_<sensor>/`) win when present; otherwise we fall back to the legacy
-    temperature-only artifact for the hyperparameter lift. LSTM is rebuilt
-    with `target=sensor` regardless so its head matches the eval target.
+    ARIMA / SARIMA: per-sensor artifact (`arima_<sensor>.pkl`,
+    `sarima_<sensor>.pkl`) wins; otherwise the legacy temperature-only
+    artifact provides the hyperparameter lift.
+
+    LSTM: single multi-target artifact at `lstm/`. The eval refits a fresh
+    multi-target LSTM each call (joint Dense(5) loss); `target=sensor`
+    only selects which output column is exposed by predict() for residual
+    scoring.
     """
     per_sensor_paths = {
         "arima": ARTIFACTS_DIR / f"arima_{sensor}.pkl",
         "sarima": ARTIFACTS_DIR / f"sarima_{sensor}.pkl",
-        "lstm": ARTIFACTS_DIR / f"lstm_{sensor}",
     }
     legacy_paths = {
         "arima": ARTIFACTS_DIR / "arima.pkl",
@@ -87,17 +90,32 @@ def _build_forecaster(name: str, sensor: str = "temperature"):
         "lstm": LstmForecaster,
     }
     cls = cls_map[name]
+
+    # LSTM uses a single shared artifact regardless of sensor; lift hyperparams,
+    # rebuild fresh with target=sensor for refit.
+    if name == "lstm":
+        art = legacy_paths["lstm"]
+        if not art.exists():
+            return LstmForecaster(target=sensor)
+        loaded = LstmForecaster(target="temperature")  # safe to load any target
+        try:
+            loaded.load(art)
+        except Exception:
+            return LstmForecaster(target=sensor)
+        return LstmForecaster(
+            window=loaded.window,
+            epochs=loaded.epochs,
+            batch_size=loaded.batch_size,
+            target=sensor,
+        )
+
     art = per_sensor_paths[name] if per_sensor_paths[name].exists() else legacy_paths[name]
     if not art.exists():
-        if name == "lstm":
-            return LstmForecaster(target=sensor)
         return cls()
     loaded = cls()
     try:
         loaded.load(art)
     except Exception:
-        if name == "lstm":
-            return LstmForecaster(target=sensor)
         return cls()
     if name == "arima":
         return ArimaForecaster(order=loaded.order)
@@ -106,13 +124,6 @@ def _build_forecaster(name: str, sensor: str = "temperature"):
             order=loaded.order,
             seasonal_order=loaded.seasonal_order,
             auto=False,
-        )
-    if name == "lstm":
-        return LstmForecaster(
-            window=loaded.window,
-            epochs=loaded.epochs,
-            batch_size=loaded.batch_size,
-            target=sensor,
         )
     return cls()
 
