@@ -6,7 +6,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
+import java.util.Date;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 @CrossOrigin(origins = "http://localhost:5173")
 //@CrossOrigin(origins = "*") // Cho phép tất cả các nguồn gọi API này
 @RestController
@@ -36,5 +39,40 @@ public class SensorValueController {
             @RequestParam String groupId,
             @RequestParam String sensorId) {
         return sensorValueService.getGroupHistory(groupId, sensorId);
+    }
+
+    /**
+     * Latest reading per weather sensor for a group. Shape:
+     *   {
+     *     "groupId": "default",
+     *     "latestTime": "2026-05-21T10:00:00.000+00:00",
+     *     "readings": {
+     *       "temperature":      { "value": 30.24,  "time": "..." },
+     *       "relativeHumidity": { "value": 96.9,   "time": "..." },
+     *       "rain":             { "value": 4.6,    "time": "..." },
+     *       "wind":             { "value": 1.6,    "time": "..." },
+     *       "radiation":        { "value": 0.155,  "time": "..." }
+     *     }
+     *   }
+     * Sensors with no data are omitted from `readings`. `latestTime` is the
+     * max across all returned sensors (null if the group has no readings).
+     */
+    @GetMapping("/latest")
+    public Map<String, Object> getLatestForGroup(@RequestParam String groupId) {
+        Map<String, SensorValueService.Reading> readings =
+                sensorValueService.getLatestForGroup(groupId);
+
+        Date latestTime = null;
+        for (SensorValueService.Reading r : readings.values()) {
+            if (r.time != null && (latestTime == null || r.time.after(latestTime))) {
+                latestTime = r.time;
+            }
+        }
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("groupId", groupId);
+        body.put("latestTime", latestTime);
+        body.put("readings", readings);
+        return body;
     }
 }
