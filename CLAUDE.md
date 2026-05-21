@@ -37,19 +37,19 @@ python -m scripts.check_data        # verify Mongo data sufficiency
 uvicorn api.main:app --port 8082    # FastAPI on 8082, loopback only in prod
 ```
 
-Python 3.13. Not auto-started — run manually when working on anomaly detection or forecasting. The Java BE does not depend on it; it operates in parallel against the same Mongo (`sensor_value`).
+Python 3.13. **Now part of the runtime path on `feat/anomaly-compare`**: BE's `MqttSensorListener` forwards every weather reading to `POST /detect` via `MlDetectClient` (2s timeout, fail-soft — if ml-service is down the BE keeps running and just skips the verdict). Run it manually in dev; in prod it's bound to loopback and started alongside the BE.
 
-Two roles, two endpoints (`feat/anomaly-compare` branch ships both):
-- **Detection** (`POST /detect`) — robust statistical methods in `ml/detectors/` (Modified Z-score, Seasonal Z-score). Forecasters can also be wrapped as detectors via `ml/detectors/residual.py`'s `ResidualDetector`.
-- **Forecasting** (`POST /forecast`) — `ml/forecasters/` (ARIMA, SARIMA, LSTM); returns h-step predictions. Use for irrigation planning inputs.
+Two roles, two endpoints, **both per-sensor**:
+- **Detection** (`POST /detect`) — request body `{groupId, sensorId, time, value}`. ml-service routes by `sensorId` (404 if unknown) and runs every registered detector for that sensor: `zscore` + `seasonal_zscore` (always, fitted at startup from the NASA CSV) plus `arima_residual` / `sarima_residual` / `lstm_residual` whenever the corresponding artifact is present. Response carries per-method verdicts and a combined `is_anomaly` (OR over methods).
+- **Forecasting** (`POST /forecast`) — per-sensor ARIMA/SARIMA loaded from `{model}_{sensor}.pkl`; LSTM is a single **multi-target** artifact at `artifacts/lstm/` (Dense(5) predicts all 5 weather features at once — the caller picks a view via `LstmForecaster(target=<sensor>)`). Returns h-step predictions for the requested sensor. See `ml-service/docs/cau-hinh-lstm.md` for the LSTM architecture + hyperparameter rationale.
 
-Branches: `feat/anomaly-zscore` (statistical only), `feat/anomaly-ml` (ARIMA/SARIMA/LSTM only), `feat/anomaly-compare` (all five with dual role split), `feat/anomaly-zscore-be` (WIP Java port of seasonal Z-score into cassavaBE — replaces `RangeCheckService` with `SeasonalZScoreService`; not yet merged). Detection cadence is hourly; the Java Tier-1 check is independent of `ml-service`.
+Branches: `feat/anomaly-zscore` (statistical only), `feat/anomaly-ml` (ARIMA/SARIMA/LSTM only), `feat/anomaly-compare` (all five with dual role split, **plus the BE→ml-service integration and `sensor_correction` persistence** — current branch). The earlier `feat/anomaly-zscore-be` WIP (Java port of seasonal Z-score into cassavaBE) was **superseded** by the HTTP-delegation approach landed in `c8b0897a` and is not being merged. Detection cadence is hourly.
 
 Two benchmark reports exist with different scope; **don't conflate them**:
 - `ml-service/docs/comparison-results.md` — original 80/20 chronological split, temperature only. Headline: seasonal_zscore F1=0.948 at k=3; best h=1 forecaster LSTM MAE 1.75°C.
 - `ml-service/docs/bao-cao-so-sanh-cam-bien.md` (Vietnamese) — new 1-month holdout split, **all 5 weather sensors × all 5 detectors**. Headlines: `relativeHumidity/wind/radiation` → seasonal_zscore best; `rain` → sarima_residual best (z-score thuần insufficient on zero-inflated rain); `temperature` ambiguous (synthetic eval has 70% drift anomalies that point-wise z-score cannot catch by design, so F1 numbers underrate seasonal_zscore). Section 2 (Phương pháp luận) is the authoritative answer to "why m=24 not m=2160 for north Vietnam's 4 seasons" — quarterly retrain ≠ SARIMA seasonal period.
 
-`scripts/train.py`, `scripts/evaluate_detection.py`, `scripts/evaluate_forecast.py` all share `--test-months` (default 1) so saved artifacts never see the eval slice. `evaluate_detection.py --sensor all --methods all` reproduces the cross-sensor table.
+`scripts/train.py`, `scripts/evaluate_detection.py`, `scripts/evaluate_forecast.py` all share `--test-months` (default 1) so saved artifacts never see the eval slice. `train.py --sensor <name>|all` produces per-sensor `arima_<sensor>.pkl` / `sarima_<sensor>.pkl`; LSTM ignores `--sensor` and trains **once** (the resulting `artifacts/lstm/` is multi-target — Dense(5) — and is loaded once at startup with per-target `residual_std`). `evaluate_detection.py --sensor all --methods all` reproduces the cross-sensor table.
 
 Both FE and BE must run concurrently for development. FE Axios instances read `VITE_API_BASE` from env files — `.env.development` sets it to `http://localhost:8081`, `.env.production` sets it to `/cassava/api` (relative, resolved by nginx under the prod deploy). No Vite proxy config.
 
@@ -57,12 +57,15 @@ Both FE and BE must run concurrently for development. FE Axios instances read `V
 
 ```
 React SPA (5173) ──Axios──▶ Spring Boot API (8081) ──▶ MongoDB (remote)
-                                    │                       ▲
-                                    │                       │ libmongoc insert
-                                    │               edge C binaries (pi3)
-                                    │                       ▲
-                                    │                       │ subscribe MQTT (localhost)
-                                    │                       │
+                                    │   │                   ▲   ▲
+                                    │   │ POST /detect      │   │ libmongoc insert (raw `sensor_value`)
+                                    │   ▼ (per reading)     │   │ edge C binaries on pi3
+                                    │  ml-service (8082)    │   │
+                                    │  /detect /forecast    │   │ subscribe MQTT (localhost)
+                                    │  per-sensor models    │   │
+                                    │                       │   │
+                                    │   sensor_correction ──┘   │  (BE writes on anomaly)
+                                    │
                             mosquitto (prod) ◀──bridge──▶ mosquitto (pi3)
                                     ▲                       ▲
                                     │                       │
@@ -80,7 +83,7 @@ Two MQTT subsystems share a **two-broker topology** linked by a mosquitto bridge
 
 Subsystems:
 - **operation** — BE ↔ edge for irrigation commands/acks (`cassava/field/+/valve/+/{cmd,ack}`).
-- **sensor** — edge publishes weather + soil readings on `/sensor/weatherStation2` and `field1..field4`. Persistence is owned by the **edge C binaries** (single-file `edge/edge_to_mongo_weather.c`, `edge/edge_to_mongo_soil.c`, compiled directly with `cc` on pi3) which insert directly into MongoDB; the BE listens to the same topics for **anomaly detection** (`MqttSensorListener` + `RangeCheckService`) but does not persist.
+- **sensor** — edge publishes weather + soil readings on `/sensor/weatherStation2` and `field1..field4`. Raw persistence is owned by the **edge C binaries** (single-file `edge/edge_to_mongo_weather.c`, `edge/edge_to_mongo_soil.c`, compiled directly with `cc` on pi3) which insert into MongoDB `sensor_value`. The BE listens to the same topics for **anomaly detection**: `MqttSensorListener` forwards each weather reading to ml-service `POST /detect` via `MlDetectClient`, then `PreferredDetectionMethods` picks one method's verdict per sensor; if that verdict is anomalous the BE writes a `SensorCorrection` row (raw value still owned by the edge). Soil readings are log-only (no detectors fit for soil yet).
 
 See `deploy/MQTT.md` for runbook details (including the bridge-vs-direct rationale).
 
@@ -101,16 +104,16 @@ Main app (`Demo1Application`) uses `@EnableCaching` and `@EnableScheduling`. `Fi
 - **service/**: Split between the root and a `Mongo/` subpackage.
   - `service/`: `JwtService`, `UserService`
   - `service/Mongo/`: `FieldMongoService`, `FieldGroupService`, `FieldGroupSensorService`, `FieldSensorService`, `FieldSimulator` (crop simulation + auto irrigation history), `SensorValueService`, `IrrigationHistoryService`, `IrrigationScheduleService`, `IrrigationScheduleScheduler` (15s/30s ticks driving the schedule lifecycle for both modes)
-  - `service/anomaly/`: `RangeCheckService` (Tier-1 physical-range validation, thresholds via `anomaly.range.*` properties) + `RangeCheckResult`. Tiers 2–4 (Z-score, Seasonal Z-score, ML imputation per `Anomaly_detection.docx`) are not yet implemented.
+  - `service/anomaly/`: `MlDetectClient` (thin RestTemplate to ml-service `/detect`; fail-soft — connection / timeout / 4xx errors log and return null so the MQTT callback never throws) + `PreferredDetectionMethods` (picks which `/detect` method's verdict to act on per sensor; defaults from the benchmark winners — `temperature/relativeHumidity/radiation/wind` → `seasonal_zscore`, `rain` → `sarima_residual`; override via `ml.detection.preferred-method.<sensorId>`). The earlier Tier-1 `RangeCheckService` / `RangeCheckResult` and `anomaly.range.*` thresholds were removed in `c8b0897a` — physical-range checks now live as the (always-on) `zscore` detector inside ml-service.
 - **mqtt/**: Both MQTT subsystems share a single Paho client bean (`MqttConfig.operationMqttClient()`) connected to the private mosquitto broker. See `deploy/MQTT.md`.
   - **Operation**: `MqttCommandPublisher` (publishes `OperationCommand` to `cassava/field/{fieldId}/valve/{valveId}/cmd` at QoS 1), `MqttAckListener` (subscribes to `cassava/field/+/valve/+/ack`, dispatches into `IrrigationScheduleService.handleAck`), `MqttTopics` (topic constants), `OperationCommand` / `OperationAck` (JSON POJOs).
-  - **Sensor (anomaly)**: `MqttSensorListener` subscribes to `mqtt.sensor.weather-topic` + each `mqtt.sensor.soil-topics`, parses the `key value;` payload, runs each reading through `RangeCheckService`, and logs `[sensor] OK` or `[sensor] RANGE_FAIL`. **Does not persist** — the edge C binaries own `sensor_value` writes. `MqttSensorTopics` holds the `t/h/rad/rai/w → temperature/...` key map.
-- **entity/**: Two separate `Field` classes (see disambiguation below), plus `User`, `FieldSensor`, `FieldGroup`, `FieldGroupSensor`, `SensorValue`, `FieldSimulationResult`, `IrrigationHistory`, `IrrigationSchedule`. Also `HistoryIrrigation` — a simulation-only POJO used by `FieldSimulator` to convert in-memory auto-irrigation events into `IrrigationHistory` Mongo docs.
-- **repositories/**: Spring Data MongoDB repos under `repositories/mongo/` — includes `FieldGroupRepository`, `FieldGroupSensorRepository`, `FieldSimulationResultRepository`, `IrrigationHistoryRepository`, `IrrigationScheduleRepository`
+  - **Sensor (anomaly)**: `MqttSensorListener` subscribes to `mqtt.sensor.weather-topic` + each `mqtt.sensor.soil-topics`, parses the `key value;` payload, and for **weather** readings POSTs each `(groupId, sensorId, time, value)` to ml-service `/detect`, picks the preferred method's verdict, logs `[sensor] OK` or `[sensor] ANOMALY …`, and persists a `SensorCorrection` row on anomaly (raw value still owned by the edge). For **soil** readings it just logs (`[sensor] SOIL …`). `MqttSensorTopics` holds the `t/h/rad/rai/w → temperature/...` key map.
+- **entity/**: Two separate `Field` classes (see disambiguation below), plus `User`, `FieldSensor`, `FieldGroup`, `FieldGroupSensor`, `SensorValue`, `FieldSimulationResult`, `IrrigationHistory`, `IrrigationSchedule`, `SensorCorrection` (anomalous reading + imputed value layered on top of `sensor_value`). Also `HistoryIrrigation` — a simulation-only POJO used by `FieldSimulator` to convert in-memory auto-irrigation events into `IrrigationHistory` Mongo docs.
+- **repositories/**: Spring Data MongoDB repos under `repositories/mongo/` — includes `FieldGroupRepository`, `FieldGroupSensorRepository`, `FieldSimulationResultRepository`, `IrrigationHistoryRepository`, `IrrigationScheduleRepository`, `SensorCorrectionRepository`
 
 **Field ↔ Group constraint**: `FieldMongoService.create()` rejects a field unless `groupId` references an existing `field_group`. Every field belongs to exactly one group; groups are the unit of weather-station sharing.
 
-**Cascade delete**: `FieldMongoService.delete()` clears `field_sensor`, `sensor_value`, `simulation_result`, `irrigation_history`, and `irrigation_schedule` rows tied to the field before removing the field document. Any new field-scoped collection must be added here to avoid orphaned data.
+**Cascade delete**: `FieldMongoService.delete()` clears `field_sensor`, `sensor_value`, `simulation_result`, `irrigation_history`, and `irrigation_schedule` rows tied to the field before removing the field document. Any new field-scoped collection must be added here to avoid orphaned data. (`sensor_correction` is currently group-scoped — `fieldId` on the entity is nullable — so it is **not** in the cascade; revisit if you start writing field-scoped soil corrections.)
 
 **Reset crop**: `POST /mongo/field/resetCrop/{id}` resets per-crop state on the `Field` Mongo document (startTime, DAP=1, irrigating=false) for a new growing cycle. Note: per-crop history (`simulation_result`, `irrigation_history`) is **retained** and distinguished by `cropStartTime` — it is not cleared on reset.
 
@@ -163,15 +166,13 @@ Persistence and validation are split across two processes connecting to the same
 
 1. **Edge C binaries (`edge/edge_to_mongo_weather.c`, `edge/edge_to_mongo_soil.c`)** — each is a self-contained single `.c` file with all settings hardcoded in a `CONFIG` block at the top (Mongo URI, MQTT broker + creds, `default_group_id`, weather/soil topics, and the `SOIL_FIELDS` topic→`fieldId` table). Pi3 compiles each directly with `cc -O2 <file>.c $(pkg-config --cflags --libs libmongoc-1.0) -lpaho-mqtt3c`. They subscribe to `/sensor/weatherStation2` (weather) and `field1..4` (per-field soil moisture), parse the `key value;key value;...` payload, and insert into MongoDB `sensor_value` via `libmongoc`. Weather rows are keyed by `groupId` only (no `fieldId`); soil rows are keyed by `fieldId` only (no `groupId`) — the field's group is derivable via the `field→group` lookup. The `fieldId` for soil is resolved from the `SOIL_FIELDS` table in `edge_to_mongo_soil.c`. To add a soil field or rotate creds, edit the constants in the `.c` file and recompile. Setup + run notes live in `edge/README.md`; deploy/systemd in `deploy/DEPLOY.md` §6.
 2. **Edge pump controller (`edge/dk_bom_mqtt.c`)** — same standalone-C style; cJSON sources live alongside it (`edge/cJSON.c`, `edge/cJSON.h`). Subscribes `cassava/field/+/valve/+/cmd`, parses JSON `OperationCommand`, drives the relay (publishes `1`/`0` to `Pump<valveId>` per the in-source `RELAYS` table), and replies with `OperationAck` on `…/ack`. Spawns one detached pthread per command so long irrigations don't block the broker callback. Build: `cc -O2 dk_bom_mqtt.c cJSON.c -o dk_bom_mqtt -lpaho-mqtt3c -lpthread`.
-3. **BE (`mqtt/MqttSensorListener`)** — subscribes to the same topics on the same broker, parses the same payload, and runs each reading through `service/anomaly/RangeCheckService` (Tier-1 physical-range check). Anomalies are logged (`WARN [sensor] RANGE_FAIL …`); valid readings produce `INFO [sensor] OK …`. **The BE does not write `sensor_value`** — that is solely the edge C job.
+3. **BE (`mqtt/MqttSensorListener`)** — subscribes to the same topics on the same broker, parses the same payload, and **for weather** forwards each reading to ml-service `POST /detect` via `MlDetectClient`. `PreferredDetectionMethods` picks one method's verdict (defaults: `seasonal_zscore` for temperature/relativeHumidity/radiation/wind, `sarima_residual` for rain). On anomaly it logs `WARN [sensor] ANOMALY …` and writes a `SensorCorrection` row (raw `actual` + detector `predicted` + method + score). For **soil** it just logs (`INFO [sensor] SOIL …`). The detection call is fail-soft: if ml-service is unreachable or 4xx the BE logs `detect=skipped` and continues. **The BE does not write `sensor_value`** — that is solely the edge C job; the BE only writes `sensor_correction` on top.
 
 Sensor ID mapping (kept in sync across the `WEATHER_MAP` table in `edge/edge_to_mongo_weather.c` and `MqttSensorTopics.resolveSensorId` on the BE): `t→temperature`, `h→relativeHumidity`, `rai→rain`, `rad→radiation`, `w→wind`, plus soil keys `humidity30` (30cm) and `humidity60` (60cm) which pass through verbatim.
 
 **Sensor units** (canonical, what the C binaries publish and what the BE / FE expect): temperature °C, relativeHumidity %, rain mm/h, **radiation MJ/m²/h** (NOT W/m² — `Field.java` ET formula uses `Rs = radiation` directly, and PPFD = `radiation × 597.22`), wind m/s, humidity30/humidity60 %.
 
-Range Check thresholds are config-driven (`anomaly.range.<sensorId>.{min,max}` in `application*.properties`). Defaults: temp [-10,60], relativeHumidity [0,100], rain [0,500], **radiation [0,6]** (MJ/m²/h, ≈ 1500 W/m² peak), wind [0,50], humidity30/humidity60 [0,100]. Sensors with no configured threshold pass through (no opinion).
-
-Future tiers (Z-score, Seasonal Z-score, ML imputation) per `Anomaly_detection.docx` are out of scope for the current code — the user will design them on top of `RangeCheckService` later.
+Detection config lives in `application*.properties`: `ml.service.url` (dev `http://localhost:8082`, prod `http://127.0.0.1:8082`), `ml.service.timeout-ms` (default 2000), and optional per-sensor overrides `ml.detection.preferred-method.<sensorId>=<methodName>`. The legacy `anomaly.range.*` thresholds were removed in `c8b0897a` — physical-range bounds now live as the always-on `zscore` detector inside ml-service (fit per-sensor from the NASA POWER CSV at startup).
 
 Note: the sensor formerly named `humidity` was renamed to `relativeHumidity` — check for stale references if touching sensor code.
 
@@ -227,7 +228,7 @@ Update flow: FE-only changes → rebuild + rsync `dist/` to `/opt/cassava/webroo
 - Backend packaging is WAR (servlet-based with embedded Tomcat)
 - Java 17 required
 - Frontend API calls use four separate Axios instances — check which one matches the endpoint prefix before adding new API calls
-- MongoDB collections: `field`, `field_group`, `field_group_sensor`, `field_sensor`, `sensor_value`, `simulation_result`, `irrigation_history`, `irrigation_schedule`, `users`, `diseases`
+- MongoDB collections: `field`, `field_group`, `field_group_sensor`, `field_sensor`, `sensor_value`, `sensor_correction`, `simulation_result`, `irrigation_history`, `irrigation_schedule`, `users`, `diseases`
 - Both MQTT subsystems (operation + sensor anomaly) share a single Paho client bean `MqttConfig.operationMqttClient()` against the **prod** mosquitto broker. Edge programs (C binaries on pi3) connect to the **pi3-local** mosquitto; messages cross to BE via the mosquitto bridge.
-- Sensor persistence is owned by the **edge C binaries** (`edge/edge_to_mongo_weather.c` + `edge/edge_to_mongo_soil.c`); the Java BE never writes `sensor_value` rows. If you find Java code that does, it's drift — investigate before adding more.
+- Raw sensor persistence is owned by the **edge C binaries** (`edge/edge_to_mongo_weather.c` + `edge/edge_to_mongo_soil.c`) writing `sensor_value`; the Java BE never writes `sensor_value` rows. The BE *does* write `sensor_correction` rows on anomaly (corrected/imputed values layered on top — downstream consumers JOIN by `(time, sensorId)` and prefer `predicted` over the raw value). If you find Java code writing `sensor_value`, it's drift — investigate before adding more.
 - When changing the bridge config (`deploy/mosquitto/cassava-bridge.conf`), remember it must be re-applied on pi3 (`/etc/mosquitto/conf.d/`) and `mosquitto` restarted there — BE does not auto-pick up bridge changes since the bridge runs on the edge host, not on prod.
