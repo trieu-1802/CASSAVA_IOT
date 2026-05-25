@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Card, List, Typography, Button, Tag, Space, Spin, message } from 'antd';
+import React, { useCallback, useEffect, useState } from 'react';
+import { Card, List, Typography, Button, Tag, Space, Spin, message, Row, Col } from 'antd';
 import {
   CloudOutlined,
   FireOutlined,
@@ -11,9 +11,11 @@ import {
   LoadingOutlined,
   ApartmentOutlined,
   ArrowLeftOutlined,
+  ReloadOutlined,
 } from '@ant-design/icons';
 import { useNavigate, useParams } from 'react-router-dom';
 import groupService from '../../services/groupService';
+import api from '../../services/api';
 
 const { Title, Text } = Typography;
 
@@ -23,6 +25,33 @@ const SENSOR_CONFIG = {
   rain: { name: 'Lượng mưa tích lũy', unit: 'mm', icon: <DashboardOutlined style={{ color: '#3f6600' }} /> },
   radiation: { name: 'Bức xạ mặt trời', unit: 'MJ/m²/h', icon: <ThunderboltOutlined style={{ color: '#d48806' }} /> },
   wind: { name: 'Tốc độ gió', unit: 'm/s', icon: <CompassOutlined style={{ color: '#531dab' }} /> },
+};
+
+// Canonical units for the "current readings" panel — match what the edge C
+// binaries publish (see CLAUDE.md "Sensor units"). Different from
+// SENSOR_CONFIG above which is used by the per-sensor list (kept as-is to
+// avoid touching unrelated copy).
+const LATEST_PANEL_LABELS = {
+  temperature:      { label: 'Nhiệt độ',       unit: '°C' },
+  rain:             { label: 'Lượng mưa',      unit: 'mm/h' },
+  relativeHumidity: { label: 'Độ ẩm tương đối', unit: '%' },
+  wind:             { label: 'Tốc độ gió',     unit: 'm/s' },
+  radiation:        { label: 'Bức xạ mặt trời', unit: 'MJ/m²/h' },
+};
+
+// Order matches the screenshot: temp + rain in row 1, RH + wind in row 2, radiation alone in row 3.
+const LATEST_PANEL_LAYOUT = [
+  ['temperature', 'rain'],
+  ['relativeHumidity', 'wind'],
+  ['radiation', null],
+];
+
+const formatValue = (sensorId, value) => {
+  if (value == null) return '—';
+  // Match the screenshot's precision: temperature 2dp, radiation 3dp, rest 1dp.
+  if (sensorId === 'temperature') return value.toFixed(2);
+  if (sensorId === 'radiation') return value.toFixed(3);
+  return value.toFixed(1);
 };
 
 const getSensorConfig = (sensorId) =>
@@ -35,6 +64,22 @@ const WeatherDashboard = () => {
   const [groupInfo, setGroupInfo] = useState(null);
   const [groupSensors, setGroupSensors] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [latest, setLatest] = useState(null);            // { readings, latestTime }
+  const [latestLoading, setLatestLoading] = useState(false);
+
+  const fetchLatest = useCallback(async () => {
+    if (!groupId) return;
+    setLatestLoading(true);
+    try {
+      const res = await api.get('/sensor-values/latest', { params: { groupId } });
+      setLatest(res.data);
+    } catch (err) {
+      console.error('Lỗi tải dữ liệu mới nhất:', err);
+      message.error('Không thể tải số liệu thời tiết mới nhất!');
+    } finally {
+      setLatestLoading(false);
+    }
+  }, [groupId]);
 
   useEffect(() => {
     if (!groupId) return;
@@ -59,8 +104,9 @@ const WeatherDashboard = () => {
     };
 
     load();
+    fetchLatest();
     return () => { cancelled = true; };
-  }, [groupId]);
+  }, [groupId, fetchLatest]);
 
   if (loading) {
     return (
@@ -80,6 +126,55 @@ const WeatherDashboard = () => {
       >
         Quay lại danh sách nhóm
       </Button>
+
+      <Card
+        title={
+          <Space wrap>
+            <DashboardOutlined />
+            <Title level={4} style={{ margin: 0 }}>Dữ liệu thời tiết</Title>
+          </Space>
+        }
+        extra={
+          <Space>
+            {latest?.latestTime && (
+              <Text type="secondary">
+                Cập nhật: {new Date(latest.latestTime).toLocaleString('vi-VN')}
+              </Text>
+            )}
+            <Button
+              size="small"
+              icon={<ReloadOutlined />}
+              loading={latestLoading}
+              onClick={fetchLatest}
+            >
+              Làm mới
+            </Button>
+          </Space>
+        }
+        style={{ marginBottom: 16 }}
+      >
+        {LATEST_PANEL_LAYOUT.map((row, ri) => (
+          <Row key={ri} gutter={[24, 12]} style={{ marginBottom: ri < LATEST_PANEL_LAYOUT.length - 1 ? 12 : 0 }}>
+            {row.map((sensorId, ci) => (
+              <Col key={ci} xs={24} md={12}>
+                {sensorId ? (
+                  <Space size="large" style={{ width: '100%' }}>
+                    <Text style={{ minWidth: 160, fontSize: 15 }}>
+                      {LATEST_PANEL_LABELS[sensorId].label}:
+                    </Text>
+                    <Text strong style={{ fontSize: 16 }}>
+                      {formatValue(sensorId, latest?.readings?.[sensorId]?.value)}{' '}
+                      <Text type="secondary" style={{ fontSize: 14 }}>
+                        {LATEST_PANEL_LABELS[sensorId].unit}
+                      </Text>
+                    </Text>
+                  </Space>
+                ) : null}
+              </Col>
+            ))}
+          </Row>
+        ))}
+      </Card>
 
       <Card
         title={
