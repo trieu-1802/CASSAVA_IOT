@@ -13,7 +13,11 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.Arrays;
+import java.util.Date;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
@@ -29,6 +33,56 @@ public class SensorValueService {
     public List<SensorValue> getGroupHistory(String groupId, String sensorId) {
         return repository.findByGroupIdAndSensorIdOrderByTimeDesc(groupId, sensorId);
     }
+
+    private static final List<String> WEATHER_SENSORS =
+            Arrays.asList("temperature", "relativeHumidity", "rain", "wind", "radiation");
+
+    /**
+     * Latest reading per weather sensor for a group, in one aggregation:
+     * match groupId + sensorId ∈ weather → sort time DESC → group by sensorId
+     * keeping the first (newest) value + time.
+     *
+     * Returns a LinkedHashMap keyed by sensorId in the canonical order. Sensors
+     * with no data are omitted (caller decides how to render missing values).
+     */
+    public Map<String, Reading> getLatestForGroup(String groupId) {
+        MatchOperation match = Aggregation.match(
+                Criteria.where("groupId").is(groupId).and("sensorId").in(WEATHER_SENSORS));
+        SortOperation sort = Aggregation.sort(org.springframework.data.domain.Sort.Direction.DESC, "time");
+        AggregationOperation group = context -> new Document("$group",
+                new Document("_id", "$sensorId")
+                        .append("value", new Document("$first", "$value"))
+                        .append("time", new Document("$first", "$time")));
+
+        Aggregation agg = Aggregation.newAggregation(match, sort, group)
+                .withOptions(Aggregation.newAggregationOptions().allowDiskUse(true).build());
+        AggregationResults<Document> results = mongoTemplate.aggregate(agg, "sensor_value", Document.class);
+
+        Map<String, Reading> bySensor = new java.util.HashMap<>();
+        for (Document doc : results.getMappedResults()) {
+            String sensorId = doc.getString("_id");
+            Double value = doc.get("value", Number.class) == null
+                    ? null : doc.get("value", Number.class).doubleValue();
+            Date time = doc.getDate("time");
+            bySensor.put(sensorId, new Reading(value, time));
+        }
+
+        // Re-key in canonical order so the FE renders the grid consistently.
+        Map<String, Reading> ordered = new LinkedHashMap<>();
+        for (String s : WEATHER_SENSORS) {
+            if (bySensor.containsKey(s)) ordered.put(s, bySensor.get(s));
+        }
+        return ordered;
+    }
+
+    public static class Reading {
+        public Double value;
+        public Date time;
+
+        public Reading() {}
+        public Reading(Double value, Date time) { this.value = value; this.time = time; }
+    }
+
     /**
      * Gom dữ liệu cảm biến theo từng giờ: bucket time xuống đầu giờ, lấy trung bình
      * mỗi loại sensor trong cùng 1 giờ, rồi trả về 1 hàng / 1 giờ. Dùng cho mô hình
