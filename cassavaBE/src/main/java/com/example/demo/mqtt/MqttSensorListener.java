@@ -4,6 +4,8 @@ import com.example.demo.entity.MongoEntity.SensorCorrection;
 import com.example.demo.repositories.mongo.SensorCorrectionRepository;
 import com.example.demo.service.anomaly.MlDetectClient;
 import com.example.demo.service.anomaly.PreferredDetectionMethods;
+import com.example.demo.service.anomaly.RangeCheckResult;
+import com.example.demo.service.anomaly.RangeCheckService;
 import jakarta.annotation.PostConstruct;
 import org.eclipse.paho.client.mqttv3.MqttClient;
 import org.slf4j.Logger;
@@ -19,11 +21,13 @@ import java.util.List;
 /**
  * Subscribes to weather + soil MQTT topics.
  *
- * Weather flow (hourly per the weather station's publish cadence):
- *   parse → POST /detect (ml-service) → pick the preferred detector's verdict
- *         → if is_anomaly, write a SensorCorrection row (raw value stays in
- *           sensor_value, owned by the edge C binaries; this collection layers
- *           the imputed value on top for downstream consumers to JOIN).
+ * Weather flow (hourly per the weather station's publish cadence), two-tier:
+ *   Tier 1 — RangeCheckService physical-bounds gate. Out-of-range → flag as a
+ *            `range_check` SensorCorrection and STOP (no ml-service round-trip).
+ *   Tier 2 — in-range → POST /detect (ml-service) → pick the preferred detector's
+ *            verdict → if is_anomaly, write a SensorCorrection row.
+ *   The raw value stays in sensor_value (owned by the edge C binaries); this
+ *   collection layers the imputed/flagged value on top for consumers to JOIN.
  *
  * Soil flow: log only — no detectors fitted for soil per the benchmark scope.
  */
@@ -31,6 +35,9 @@ import java.util.List;
 public class MqttSensorListener {
 
     private static final Logger log = LoggerFactory.getLogger(MqttSensorListener.class);
+
+    /** Method name recorded on a SensorCorrection when the Tier-1 range gate rejects a reading. */
+    private static final String RANGE_METHOD = "range_check";
 
     @Autowired
     private MqttClient mqttClient;
@@ -43,6 +50,9 @@ public class MqttSensorListener {
 
     @Autowired
     private SensorCorrectionRepository correctionRepo;
+
+    @Autowired
+    private RangeCheckService rangeCheck;
 
     @Value("${mqtt.sensor.weather-topic:/sensor/weatherStation2}")
     private String weatherTopic;
@@ -98,6 +108,17 @@ public class MqttSensorListener {
     }
 
     private void detectWeather(String topic, String sensorId, Instant time, double value) {
+        // Tier 1 — cheap physical-range gate. A value outside the sensor's plausible
+        // bounds is obviously bad; flag it and skip the ml-service round-trip.
+        RangeCheckResult rc = rangeCheck.check(sensorId, value);
+        if (!rc.isValid()) {
+            log.warn("[sensor] RANGE_FAIL topic={} sensorId={} value={} min={} max={} (skipping ml-service)",
+                    topic, sensorId, value, rc.getMin(), rc.getMax());
+            persistRangeCorrection(sensorId, time, value);
+            return;
+        }
+
+        // Tier 2 — ml-service per-sensor detectors.
         MlDetectClient.DetectResponse r = mlDetect.detect(weatherGroupId, sensorId, time, value);
         if (r == null) {
             log.info("[sensor] WEATHER topic={} sensorId={} value={} detect=skipped",
@@ -144,6 +165,27 @@ public class MqttSensorListener {
             correctionRepo.save(c);
         } catch (Exception e) {
             log.warn("[sensor] failed to persist correction sensorId={} err={}", sensorId, e.getMessage());
+        }
+    }
+
+    /**
+     * Records a Tier-1 range-gate rejection. There is no imputation to offer
+     * (the ml-service call was skipped), so `predicted`/`score` stay null —
+     * the row only marks the reading as out-of-range for downstream consumers.
+     */
+    private void persistRangeCorrection(String sensorId, Instant time, double actual) {
+        try {
+            SensorCorrection c = new SensorCorrection();
+            c.setTime(Date.from(time));
+            c.setGroupId(weatherGroupId);
+            c.setSensorId(sensorId);
+            c.setActual(actual);
+            c.setPredicted(null);
+            c.setMethod(RANGE_METHOD);
+            c.setScore(null);
+            correctionRepo.save(c);
+        } catch (Exception e) {
+            log.warn("[sensor] failed to persist range correction sensorId={} err={}", sensorId, e.getMessage());
         }
     }
 
