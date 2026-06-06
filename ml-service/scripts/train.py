@@ -37,7 +37,7 @@ Artifacts:
 
 The **last 1 month** of the CSV is excluded from training and reserved as a
 held-out test set — matched by the same 1-month split in `evaluate_detection`
-and `evaluate_forecast`, so the saved artifacts never see the eval slice.
+and `evaluate_forecast_per_sensor`, so the saved artifacts never see the eval slice.
 
 Pass --data <path> to use a different CSV.
 """
@@ -138,19 +138,32 @@ def _auto_order(
     return fitted.order, fitted.seasonal_order
 
 
-def train_arima(df: pd.DataFrame, sensor: str, auto_order: bool = False, search_size: int = 0) -> None:
+def train_arima(
+    df: pd.DataFrame,
+    sensor: str,
+    auto_order: bool = False,
+    search_size: int = 0,
+    interpolate_method: str = "linear",
+    interpolate_limit: int | None = 3,
+) -> None:
     if sensor not in df.columns:
         print(f"[ARIMA] Column '{sensor}' not in data — skipping")
         return
-    series = df[sensor].dropna()
-    print(f"[ARIMA] Training on {len(series)} hourly NASA {sensor} points...")
+    # Pass the RAW series (gaps intact) so the forecaster's configured
+    # interpolation actually runs — small gaps (<= limit) filled, the rest dropped.
+    series = df[sensor]
+    clean = series.interpolate(method=interpolate_method, limit=interpolate_limit).dropna()
+    print(f"[ARIMA] Training {sensor}: {len(clean)} usable points after "
+          f"interpolate(method={interpolate_method}, limit={interpolate_limit})...")
 
     if auto_order:
-        order, _ = _auto_order(series, seasonal=False, search_size=search_size)
+        order, _ = _auto_order(clean, seasonal=False, search_size=search_size)
         print(f"  Auto-selected order: {order}")
-        det = ArimaForecaster(order=order)
+        det = ArimaForecaster(order=order, interpolate_method=interpolate_method,
+                              interpolate_limit=interpolate_limit)
     else:
-        det = ArimaForecaster()
+        det = ArimaForecaster(interpolate_method=interpolate_method,
+                              interpolate_limit=interpolate_limit)
 
     print(f"  Fitting ARIMA{det.order}...")
     det.fit(series)
@@ -159,17 +172,27 @@ def train_arima(df: pd.DataFrame, sensor: str, auto_order: bool = False, search_
     print(f"  Saved -> {out} (residual_std={det.residual_std:.3f})")
 
 
-def train_sarima(df: pd.DataFrame, sensor: str, auto_order: bool = False) -> None:
+def train_sarima(
+    df: pd.DataFrame,
+    sensor: str,
+    auto_order: bool = False,
+    interpolate_method: str = "linear",
+    interpolate_limit: int | None = 3,
+) -> None:
     if sensor not in df.columns:
         print(f"[SARIMA] Column '{sensor}' not in data — skipping")
         return
-    series = df[sensor].dropna()
-    print(f"[SARIMA] Training on {len(series)} hourly NASA {sensor} points...")
+    # Raw series in; SarimaForecaster.fit applies the configured interpolation.
+    series = df[sensor]
+    clean = series.interpolate(method=interpolate_method, limit=interpolate_limit).dropna()
+    print(f"[SARIMA] Training {sensor}: {len(clean)} usable points after "
+          f"interpolate(method={interpolate_method}, limit={interpolate_limit})...")
 
     # SarimaForecaster uses statsforecast under the hood. When auto=True,
     # AutoARIMA's stepwise search runs INSIDE fit() — no separate helper call,
     # and no need to subsample for memory (statsforecast handles full data).
-    det = SarimaForecaster(auto=auto_order)
+    det = SarimaForecaster(auto=auto_order, interpolate_method=interpolate_method,
+                           interpolate_limit=interpolate_limit)
 
     if auto_order:
         print("  Fitting SARIMA via statsforecast AutoARIMA (stepwise search inside fit)...")
@@ -231,8 +254,21 @@ def main() -> None:
         type=int,
         default=1,
         help="Exclude the last N months from training, reserving them as a held-out "
-             "test set. Default 1 (matches evaluate_detection / evaluate_forecast). "
+             "test set. Default 1 (matches evaluate_detection / evaluate_forecast_per_sensor). "
              "Pass 0 to train on the full CSV.",
+    )
+    ap.add_argument(
+        "--interpolate-method",
+        default="linear",
+        help="pandas Series.interpolate method applied to ARIMA/SARIMA input before "
+             "fit (e.g. linear, time, nearest). Ignored for LSTM. Default: linear.",
+    )
+    ap.add_argument(
+        "--interpolate-limit",
+        type=lambda v: None if str(v).lower() in ("none", "", "0") else int(v),
+        default=3,
+        help="Max consecutive NaNs the ARIMA/SARIMA interpolation fills before "
+             "dropping the rest. Pass 'none' for unlimited. Ignored for LSTM. Default: 3.",
     )
     args = ap.parse_args()
 
@@ -242,11 +278,15 @@ def main() -> None:
     for sensor in sensors:
         print(f"\n=== Training for sensor: {sensor} ===")
         if args.model in ("arima", "all"):
-            train_arima(df, sensor, auto_order=args.auto_order, search_size=args.auto_search_size)
+            train_arima(df, sensor, auto_order=args.auto_order, search_size=args.auto_search_size,
+                        interpolate_method=args.interpolate_method,
+                        interpolate_limit=args.interpolate_limit)
         if args.model in ("sarima", "all"):
             # SARIMA uses statsforecast AutoARIMA which handles full-data search
             # natively; --auto-search-size only affects ARIMA's pmdarima path.
-            train_sarima(df, sensor, auto_order=args.auto_order)
+            train_sarima(df, sensor, auto_order=args.auto_order,
+                         interpolate_method=args.interpolate_method,
+                         interpolate_limit=args.interpolate_limit)
 
     # LSTM is multi-target by construction (Dense(5) predicts all 5 sensors).
     # Train ONCE regardless of --sensor; `--sensor all` doesn't multiply LSTM

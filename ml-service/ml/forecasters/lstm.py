@@ -13,8 +13,13 @@ query the last 48 hours of MQTT sensor data from Mongo (or an injected
 offline context) and ask the LSTM to predict the next-hour values of all
 5 features; the caller's `target` selects which scalar to return.
 
-Architecture (small on purpose -- limited training data):
-    LSTM(64) -> Dropout(0.2) -> Dense(32, relu) -> Dense(5)
+Architecture (literature-grounded):
+    LSTM(64, variational dropout) -> LSTM(32, variational dropout)
+        -> Dropout(0.1) -> Dense(32, relu) -> Dense(5)
+    Huber loss, Adam(1e-3), EarlyStopping on a validation tail.
+Variational dropout (dropout + recurrent_dropout on the LSTM cells, Gal &
+Ghahramani 2016) replaces the old post-LSTM Dropout; depth (2 stacked layers)
+and the robust Huber loss follow the hourly-weather LSTM literature.
 
 Multi-step horizons (`predict(time, h>1)`) are produced by iterative
 roll-forward: at each step the predicted 5-vector replaces the oldest
@@ -47,9 +52,19 @@ class LstmForecaster(Forecaster):
     def __init__(
         self,
         window: int = 48,
-        epochs: int = 30,
+        epochs: int = 100,
         batch_size: int = 32,
         target: str = "temperature",
+        hidden_units: int = 64,
+        num_layers: int = 2,
+        dropout: float = 0.1,
+        recurrent_dropout: float = 0.1,
+        dense_units: int = 32,
+        learning_rate: float = 1e-3,
+        loss: str = "huber",
+        huber_delta: float = 0.1,
+        validation_split: float = 0.1,
+        patience: int = 8,
     ) -> None:
         super().__init__()
         if target not in LSTM_FEATURES:
@@ -57,10 +72,25 @@ class LstmForecaster(Forecaster):
                 f"LSTM target {target!r} not in LSTM_FEATURES {LSTM_FEATURES}"
             )
         self.window = window
+        # `epochs` is now a CAP: EarlyStopping (patience) usually halts well before
+        # this, restoring the best-val-loss weights. Literature-grounded defaults —
+        # see the module docstring above for the architecture rationale.
         self.epochs = epochs
         self.batch_size = batch_size
         self.target = target
         self.target_idx = LSTM_FEATURES.index(target)
+        # Architecture / training knobs (lifted out of fit() so the config is
+        # explicit and serialisable; values come from the literature review).
+        self.hidden_units = hidden_units      # units in the first LSTM layer
+        self.num_layers = num_layers          # stacked LSTM layers (64 -> 32 ...)
+        self.dropout = dropout                # input dropout on LSTM (variational)
+        self.recurrent_dropout = recurrent_dropout  # recurrent dropout (Gal & Ghahramani)
+        self.dense_units = dense_units        # bottleneck Dense width
+        self.learning_rate = learning_rate
+        self.loss = loss                      # "huber" (robust) or "mse"
+        self.huber_delta = huber_delta        # Huber transition (scaled units)
+        self.validation_split = validation_split
+        self.patience = patience              # EarlyStopping patience (epochs)
         self._scaler = None  # sklearn MinMaxScaler
         self._model = None   # Keras model with Dense(len(LSTM_FEATURES)) output
         # `residual_std` mirrors `self._residual_std_by_target[self.target]`
@@ -82,15 +112,26 @@ class LstmForecaster(Forecaster):
 
     # ---- training (NASA multivariate, multi-target) ---------------------
 
-    def fit(self, multivariate_df: pd.DataFrame) -> None:
+    def fit(self, multivariate_df: pd.DataFrame, seed: int | None = None) -> None:
         """Train on a NASA-style multivariate hourly DataFrame.
 
         The model is trained jointly to predict all 5 features at next step.
         After fit, `_residual_std_by_target` holds per-target residual sigma
         and `residual_std` exposes the value for `self.target`.
+
+        `seed`: if provided, makes initialization + dropout deterministic so
+        runs with the same seed are byte-identical. `evaluate_detection.py`
+        pins seed=42 for the lstm_residual refit so per-sensor F1 numbers are
+        comparable across detectors (separates config effect from random-init noise).
         """
         from sklearn.preprocessing import MinMaxScaler  # noqa: PLC0415
         from tensorflow import keras  # noqa: PLC0415
+
+        if seed is not None:
+            import random as _random  # noqa: PLC0415
+            _random.seed(seed)
+            np.random.seed(seed)
+            keras.utils.set_random_seed(seed)
 
         df = multivariate_df.reindex(columns=LSTM_FEATURES).interpolate(limit=3).dropna()
         if len(df) < self.window + 50:
@@ -101,17 +142,59 @@ class LstmForecaster(Forecaster):
 
         X, Y = self._make_sequences(scaled)
 
-        self._model = keras.Sequential(
-            [
-                keras.layers.Input(shape=(self.window, len(LSTM_FEATURES))),
-                keras.layers.LSTM(64, return_sequences=False),
-                keras.layers.Dropout(0.2),
-                keras.layers.Dense(32, activation="relu"),
-                keras.layers.Dense(len(LSTM_FEATURES)),  # 5 outputs
-            ]
+        # Stacked LSTM with variational dropout. `dropout` (inputs) +
+        # `recurrent_dropout` (recurrent connections, same mask across timesteps)
+        # is the theoretically-grounded scheme for RNNs from Gal & Ghahramani
+        # (NeurIPS 2016) — naive Dropout on recurrent state hurts. recurrent_dropout
+        # disables the cuDNN kernel, but we train on CPU so there is no loss.
+        layers = [keras.layers.Input(shape=(self.window, len(LSTM_FEATURES)))]
+        units = self.hidden_units
+        for li in range(self.num_layers):
+            last = li == self.num_layers - 1
+            layers.append(
+                keras.layers.LSTM(
+                    units,
+                    return_sequences=not last,   # stack feeds sequences downward
+                    dropout=self.dropout,
+                    recurrent_dropout=self.recurrent_dropout,
+                )
+            )
+            units = max(units // 2, 8)           # taper 64 -> 32 -> ...
+        layers.append(keras.layers.Dropout(self.dropout))   # feed-forward dropout
+        layers.append(keras.layers.Dense(self.dense_units, activation="relu"))
+        layers.append(keras.layers.Dense(len(LSTM_FEATURES)))  # 5 linear outputs
+        self._model = keras.Sequential(layers)
+
+        # Huber (robust to spikes; MSE-like within |residual| < delta so the
+        # near-Gaussian residual core that the |z|>k detector assumes is kept).
+        # delta is in MinMax-scaled units. Fall back to plain MSE if requested.
+        loss_fn = (
+            keras.losses.Huber(delta=self.huber_delta)
+            if self.loss == "huber" else self.loss
         )
-        self._model.compile(optimizer="adam", loss="mse")
-        self._model.fit(X, Y, epochs=self.epochs, batch_size=self.batch_size, verbose=0)
+        self._model.compile(
+            optimizer=keras.optimizers.Adam(learning_rate=self.learning_rate),
+            loss=loss_fn,
+        )
+        # EarlyStopping on a chronological validation tail (Keras takes the last
+        # `validation_split` of X before shuffling). `epochs` is the cap.
+        callbacks = []
+        if self.validation_split and self.patience:
+            callbacks.append(
+                keras.callbacks.EarlyStopping(
+                    monitor="val_loss",
+                    patience=self.patience,
+                    restore_best_weights=True,
+                )
+            )
+        self._model.fit(
+            X, Y,
+            epochs=self.epochs,
+            batch_size=self.batch_size,
+            validation_split=self.validation_split or 0.0,
+            callbacks=callbacks,
+            verbose=0,
+        )
         self.fitted = True
 
         # Calibrate residual_std per target so ResidualDetector wrappers
@@ -217,6 +300,17 @@ class LstmForecaster(Forecaster):
                     "batch_size": self.batch_size,
                     "scaler": self._scaler,
                     "residual_std_by_target": self._residual_std_by_target,
+                    # Architecture / training config (so a reload rebuilds an
+                    # identically-configured view; older artifacts omit these and
+                    # fall back to the constructor defaults on load).
+                    "hidden_units": self.hidden_units,
+                    "num_layers": self.num_layers,
+                    "dropout": self.dropout,
+                    "recurrent_dropout": self.recurrent_dropout,
+                    "dense_units": self.dense_units,
+                    "learning_rate": self.learning_rate,
+                    "loss": self.loss,
+                    "huber_delta": self.huber_delta,
                     # New format marker; legacy single-target artifacts don't have it.
                     "multi_target": True,
                 },
@@ -233,6 +327,17 @@ class LstmForecaster(Forecaster):
         self.epochs = d["epochs"]
         self.batch_size = d["batch_size"]
         self._scaler = d["scaler"]
+        # Architecture / training config — fall back to current defaults for
+        # artifacts saved before these were serialised. The Keras graph itself is
+        # restored from model.keras, so these only matter for re-fit / introspection.
+        self.hidden_units = d.get("hidden_units", self.hidden_units)
+        self.num_layers = d.get("num_layers", self.num_layers)
+        self.dropout = d.get("dropout", self.dropout)
+        self.recurrent_dropout = d.get("recurrent_dropout", self.recurrent_dropout)
+        self.dense_units = d.get("dense_units", self.dense_units)
+        self.learning_rate = d.get("learning_rate", self.learning_rate)
+        self.loss = d.get("loss", self.loss)
+        self.huber_delta = d.get("huber_delta", self.huber_delta)
 
         if d.get("multi_target"):
             # New multi-output format: residual_std per target dict.

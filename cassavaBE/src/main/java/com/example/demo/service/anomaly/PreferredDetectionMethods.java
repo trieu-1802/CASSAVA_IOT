@@ -12,7 +12,7 @@ import java.util.Map;
 /**
  * Picks which /detect method's verdict to act on, per sensor.
  *
- * Defaults are the winners from ml-service/docs/bao-cao-so-sanh-cam-bien.md:
+ * Defaults are the per-sensor winners from the ml-service detector benchmark:
  *   - temperature, relativeHumidity, radiation, wind → seasonal_zscore
  *   - rain → sarima_residual (z-score thuần can't catch zero-inflated rain spikes)
  *

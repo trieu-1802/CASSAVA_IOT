@@ -9,8 +9,15 @@ Buckets are keyed by `time.hour` (UTC, since Mongo stores UTC and pandas
 preserves it). For Vietnam (UTC+7) this means hour=0 ⇒ 07:00 local — that's
 fine, the daily pattern still exists, just shifted.
 
+Each bucket uses the *modified* Z-score (median + MAD), the same robust statistic
+as `ZScoreDetector` (§2.2.2) — only the reference set is the matching hour-of-day
+bucket instead of a sliding window. Median/MAD (not mean/std) keeps the per-bucket
+threshold from being dragged by a few spikes.
+
+    z_mod = 0.6745 * (x - median_bucket) / MAD_bucket
+
 Need ≥ ~14 days of data so each bucket has enough samples for a stable
-mean/std estimate.
+median/MAD estimate.
 """
 from __future__ import annotations
 
@@ -22,6 +29,7 @@ import pandas as pd
 from ..base import AnomalyDetector, ScoreResult
 
 _MIN_PER_BUCKET = 10
+_MAD_CONSISTENCY = 0.6745  # Iglewicz & Hoaglin — MAD ≈ σ under normality
 
 
 class SeasonalZScoreDetector(AnomalyDetector):
@@ -29,7 +37,7 @@ class SeasonalZScoreDetector(AnomalyDetector):
 
     def __init__(self) -> None:
         super().__init__()
-        self._bucket_stats: dict[int, tuple[float, float]] = {}  # hour → (μ, σ)
+        self._bucket_stats: dict[int, tuple[float, float]] = {}  # hour → (median, MAD)
 
     def fit(self, series: pd.Series) -> None:
         clean = series.dropna()
@@ -43,10 +51,10 @@ class SeasonalZScoreDetector(AnomalyDetector):
         residuals = []
         for hour, group in df.groupby("hour"):
             if len(group) >= _MIN_PER_BUCKET:
-                mu = float(group["value"].mean())
-                sigma = float(group["value"].std())
-                self._bucket_stats[int(hour)] = (mu, sigma)
-                residuals.extend((group["value"] - mu).tolist())
+                med = float(group["value"].median())
+                mad = float((group["value"] - med).abs().median())
+                self._bucket_stats[int(hour)] = (med, mad)
+                residuals.extend((group["value"] - med).tolist())
 
         if not self._bucket_stats:
             raise ValueError("No bucket has enough samples to estimate stats")
@@ -60,13 +68,13 @@ class SeasonalZScoreDetector(AnomalyDetector):
         if hour not in self._bucket_stats:
             return ScoreResult(actual, None, None, 0.0, False, self.name)
 
-        mu, sigma = self._bucket_stats[hour]
-        if sigma < 1e-9:
-            return ScoreResult(actual, mu, actual - mu, 0.0, False, self.name)
+        med, mad = self._bucket_stats[hour]
+        if mad < 1e-9:
+            return ScoreResult(actual, med, actual - med, 0.0, False, self.name)
 
-        z = (actual - mu) / sigma
+        z = _MAD_CONSISTENCY * (actual - med) / mad
         is_anom = abs(z) > k
-        return ScoreResult(actual, mu, actual - mu, abs(z), is_anom, self.name)
+        return ScoreResult(actual, med, actual - med, abs(z), is_anom, self.name)
 
     def save(self, path: Path) -> None:
         with open(path, "wb") as f:

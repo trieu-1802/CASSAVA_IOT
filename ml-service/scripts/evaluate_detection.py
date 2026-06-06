@@ -183,6 +183,15 @@ def inject_anomalies(
             perturbed.iloc[start:end] = perturbed.iloc[start:end] + drift
             labels.iloc[start:end] = True
 
+    if "missing" in patterns:
+        # Dropped / missing readings: NaN gaps where the sensor lost the value.
+        # These are what the RECOVERY scenario (KB2) restores — the detect→impute
+        # loop imputes a forecast at each gap. Point-wise detectors (z-score) skip
+        # NaN, so this pattern is meant for the recovery walk, not KB1 detection.
+        for idx in rng.choice(n, size=max(1, n // 100), replace=False):
+            perturbed.iloc[idx] = np.nan
+            labels.iloc[idx] = True
+
     return perturbed, labels
 
 
@@ -224,7 +233,12 @@ def score_detector(
     if needs_multivariate:
         if multivariate_train is None:
             raise RuntimeError("LSTM-residual refit needs multivariate_train DataFrame")
-        det.fit(multivariate_train)
+        # Pin LSTM init seed for reproducibility — without this, every sensor
+        # gets a different random LSTM and lstm_residual F1 numbers are not
+        # comparable across detectors or between thesis sections.
+        det.forecaster.fit(multivariate_train, seed=42)
+        det.fitted = det.forecaster.fitted
+        det.residual_std = det.forecaster.residual_std
     else:
         det.fit(train)
 

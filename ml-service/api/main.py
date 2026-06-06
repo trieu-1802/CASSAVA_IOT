@@ -2,10 +2,10 @@
 
 Two roles, two endpoints, both per-sensor:
   - /detect   -> for each weather sensor: zscore + seasonal_zscore (always)
-                 plus arima_residual / sarima_residual (when per-sensor artifact
-                 exists) plus lstm_residual (temperature only).
-  - /forecast -> per-sensor ARIMA / SARIMA / LSTM forecasters loaded from
-                 `{model}_{sensor}.pkl` artifacts. LSTM is temperature-only.
+                 plus arima_residual / sarima_residual / lstm_residual (each
+                 when its artifact exists).
+  - /forecast -> per-sensor ARIMA / SARIMA loaded from `{model}_{sensor}.pkl`,
+                 plus a single multi-target LSTM (Dense(5)) viewed per sensor.
 
 Each artifact failure is independent: missing files or bad fits leave the
 remaining models registered. /health and /models report the live registry.
