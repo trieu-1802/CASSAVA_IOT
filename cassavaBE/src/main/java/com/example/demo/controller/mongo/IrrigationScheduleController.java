@@ -43,6 +43,12 @@ public class IrrigationScheduleController {
         return scheduleService.cancel(id);
     }
 
+    /** Dừng tưới một lịch đang RUNNING: gửi CLOSE xuống edge + ghi lượng nước một phần. */
+    @PutMapping("/{id}/stop")
+    public IrrigationSchedule stop(@PathVariable String id) {
+        return scheduleService.stop(id);
+    }
+
     @PutMapping("/{id}/status")
     public IrrigationSchedule updateStatus(@PathVariable String id,
                                            @RequestBody Map<String, String> body) {

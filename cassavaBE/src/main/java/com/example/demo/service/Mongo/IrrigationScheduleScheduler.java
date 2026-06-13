@@ -65,7 +65,7 @@ public class IrrigationScheduleScheduler {
             if (nowMs < finishMs) continue;
 
             scheduleService.markDoneAndRecord(s.getId());
-            log.info("Schedule {} (SIMULATION) RUNNING → DONE", s.getId());
+            log.info("Schedule {} RUNNING → DONE (startedAt + duration elapsed)", s.getId());
         }
     }
 

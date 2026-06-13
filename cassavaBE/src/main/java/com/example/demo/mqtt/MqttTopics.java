@@ -19,4 +19,5 @@ public final class MqttTopics {
 
     public static final String ACK_DONE = "DONE";
     public static final String ACK_FAILED = "FAILED";
+    public static final String ACK_RUNNING = "RUNNING";
 }

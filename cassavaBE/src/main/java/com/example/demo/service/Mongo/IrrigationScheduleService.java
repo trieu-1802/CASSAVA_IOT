@@ -4,6 +4,7 @@ import com.example.demo.entity.MongoEntity.Field;
 import com.example.demo.entity.MongoEntity.IrrigationHistory;
 import com.example.demo.entity.MongoEntity.IrrigationSchedule;
 import com.example.demo.entity.MongoEntity.IrrigationSchedule.Status;
+import com.example.demo.mqtt.MqttCommandPublisher;
 import com.example.demo.repositories.mongo.FieldMongoRepository;
 import com.example.demo.repositories.mongo.IrrigationHistoryRepository;
 import com.example.demo.repositories.mongo.IrrigationScheduleRepository;
@@ -25,6 +26,9 @@ public class IrrigationScheduleService {
 
     @Autowired
     private IrrigationHistoryRepository irrigationHistoryRepository;
+
+    @Autowired
+    private MqttCommandPublisher commandPublisher;
 
     public IrrigationSchedule create(IrrigationSchedule schedule) {
         if (schedule.getFieldId() == null || schedule.getFieldId().trim().isEmpty()) {
@@ -97,8 +101,10 @@ public class IrrigationScheduleService {
         if (status == Status.DONE || status == Status.FAILED || status == Status.CANCELLED) {
             s.setFinishedAt(now);
         }
-        if (errorMessage != null) {
-            s.setErrorMessage(errorMessage);
+        if (status == Status.FAILED || status == Status.NO_ACK) {
+            s.setErrorMessage(errorMessage); // chỉ trạng thái lỗi mới mang errorMessage
+        } else {
+            s.setErrorMessage(null);         // chuyển sang trạng thái không-lỗi → dọn message cũ
         }
         return scheduleRepository.save(s);
     }
@@ -114,6 +120,23 @@ public class IrrigationScheduleService {
         s.setStatus(Status.SENT);
         s.setSentAt(now);
         s.setUpdatedAt(now);
+        return scheduleRepository.save(s);
+    }
+
+    /**
+     * Edge xác nhận đã bắt đầu tưới (ack "RUNNING"): chỉ chuyển SENT → RUNNING
+     * và set startedAt. Bỏ qua nếu lịch đã ở trạng thái khác (terminal / đã RUNNING)
+     * để ack đến trễ không ghi đè kết quả. Sau đó completeRunningSimulations tự đẩy
+     * RUNNING → DONE khi startedAt + durationSeconds trôi qua (tính amount + ghi history).
+     */
+    public IrrigationSchedule markRunning(String id) {
+        IrrigationSchedule s = scheduleRepository.findById(id).orElse(null);
+        if (s == null || s.getStatus() != Status.SENT) return s;
+        Date now = new Date();
+        s.setStatus(Status.RUNNING);
+        if (s.getStartedAt() == null) s.setStartedAt(now);
+        s.setUpdatedAt(now);
+        s.setErrorMessage(null);
         return scheduleRepository.save(s);
     }
 
@@ -158,6 +181,7 @@ public class IrrigationScheduleService {
         s.setFinishedAt(now);
         s.setUpdatedAt(now);
         s.setAmount(amountMm);
+        s.setErrorMessage(null); // lịch hoàn tất thì không còn lỗi tồn đọng
         IrrigationSchedule saved = scheduleRepository.save(s);
 
         if (field != null && amountMm != null) {
@@ -175,6 +199,56 @@ public class IrrigationScheduleService {
             irrigationHistoryRepository.save(history);
         }
 
+        return saved;
+    }
+
+    /**
+     * Dừng tưới một lịch đang RUNNING: gửi lệnh CLOSE xuống edge (tắt bơm), rồi ghi
+     * nhận lượng nước MỘT PHẦN theo thời gian đã tưới thực tế (startedAt → now),
+     * đánh DONE và ghi history. Chỉ áp dụng cho lịch đang RUNNING.
+     */
+    public IrrigationSchedule stop(String id) {
+        IrrigationSchedule s = scheduleRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy lịch tưới ID: " + id));
+        if (s.getStatus() != Status.RUNNING) {
+            throw new RuntimeException("Chỉ dừng được lịch đang tưới (RUNNING). Hiện tại: " + s.getStatus());
+        }
+        if (s.getValveId() == null) {
+            throw new RuntimeException("Lịch chưa có valveId, không gửi được lệnh dừng");
+        }
+
+        try {
+            commandPublisher.publishClose(s.getFieldId(), s.getValveId(), s.getId());
+        } catch (Exception e) {
+            throw new RuntimeException("Không gửi được lệnh dừng tới edge: " + e.getMessage());
+        }
+
+        Field field = fieldMongoRepository.findById(s.getFieldId()).orElse(null);
+        Date now = new Date();
+        long elapsedSec = s.getStartedAt() != null
+                ? Math.max(0L, (now.getTime() - s.getStartedAt().getTime()) / 1000L) : 0L;
+        Double amountMm = computeAmountMm(field, (int) elapsedSec);
+
+        s.setStatus(Status.DONE);
+        s.setFinishedAt(now);
+        s.setUpdatedAt(now);
+        s.setAmount(amountMm);
+        s.setErrorMessage(null);
+        IrrigationSchedule saved = scheduleRepository.save(s);
+
+        if (field != null && amountMm != null) {
+            Date eventTime = s.getStartedAt() != null ? s.getStartedAt() : now;
+            String timeStr = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(eventTime);
+            Double durationMinutes = elapsedSec / 60.0;
+            IrrigationHistory history = new IrrigationHistory(
+                    s.getFieldId(),
+                    field.getStartTime(),
+                    timeStr,
+                    s.getUserName(),
+                    amountMm,
+                    durationMinutes);
+            irrigationHistoryRepository.save(history);
+        }
         return saved;
     }
 

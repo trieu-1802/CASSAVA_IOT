@@ -28,9 +28,14 @@ public class MqttAckListener {
             mqttClient.subscribe(MqttTopics.ACK_WILDCARD, 1, (topic, message) -> {
                 try {
                     OperationAck ack = mapper.readValue(message.getPayload(), OperationAck.class);
-                    boolean ok = MqttTopics.ACK_DONE.equalsIgnoreCase(ack.getAck());
                     log.info("MQTT ack {}: schedule={}, ack={}", topic, ack.getScheduleId(), ack.getAck());
-                    scheduleService.handleAck(ack.getScheduleId(), ok, ack.getErrorMessage());
+                    if (MqttTopics.ACK_RUNNING.equalsIgnoreCase(ack.getAck())) {
+                        // ack sớm "đang tưới" → SENT → RUNNING, thoát timeout NO_ACK 60s
+                        scheduleService.markRunning(ack.getScheduleId());
+                    } else {
+                        boolean ok = MqttTopics.ACK_DONE.equalsIgnoreCase(ack.getAck());
+                        scheduleService.handleAck(ack.getScheduleId(), ok, ack.getErrorMessage());
+                    }
                 } catch (Exception e) {
                     log.warn("Bad ack payload on {}: {}", topic, e.getMessage());
                 }

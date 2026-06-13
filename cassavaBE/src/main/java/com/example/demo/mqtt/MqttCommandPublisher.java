@@ -39,4 +39,25 @@ public class MqttCommandPublisher {
         mqttClient.publish(topic, msg);
         log.info("MQTT publish {} → schedule={}, dur={}s", topic, scheduleId, durationSeconds);
     }
+
+    public void publishClose(String fieldId, int valveId, String scheduleId)
+            throws MqttException, com.fasterxml.jackson.core.JsonProcessingException {
+
+        OperationCommand cmd = new OperationCommand(
+                scheduleId,
+                MqttTopics.ACTION_CLOSE,
+                null,
+                System.currentTimeMillis()
+        );
+
+        String topic = MqttTopics.commandTopic(fieldId, valveId);
+        byte[] payload = mapper.writeValueAsBytes(cmd);
+
+        MqttMessage msg = new MqttMessage(payload);
+        msg.setQos(1);
+        msg.setRetained(false);
+
+        mqttClient.publish(topic, msg);
+        log.info("MQTT publish {} → CLOSE schedule={}", topic, scheduleId);
+    }
 }

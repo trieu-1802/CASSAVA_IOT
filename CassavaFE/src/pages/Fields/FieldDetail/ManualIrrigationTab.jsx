@@ -129,6 +129,17 @@ const ManualIrrigationTab = ({ fieldId, fieldName, fieldMode = 'OPERATION' }) =>
     }
   };
 
+  const stopSchedule = async (id) => {
+    try {
+      await fieldService.put(`/irrigation-schedule/${id}/stop`);
+      message.success('Đã gửi lệnh dừng tưới');
+      loadSchedules();
+    } catch (err) {
+      const msg = err?.response?.data?.message || err?.response?.data || err.message;
+      message.error('Dừng tưới thất bại: ' + msg);
+    }
+  };
+
   const columns = [
     {
       title: 'Thời điểm',
@@ -173,16 +184,29 @@ const ManualIrrigationTab = ({ fieldId, fieldName, fieldMode = 'OPERATION' }) =>
       title: '',
       key: 'actions',
       width: 110,
-      render: (_, row) => row.status === 'PENDING' ? (
-        <Popconfirm
-          title="Hủy lịch này?"
-          okText="Hủy lịch"
-          cancelText="Không"
-          onConfirm={() => cancelSchedule(row.id)}
-        >
-          <Button danger size="small">Hủy</Button>
-        </Popconfirm>
-      ) : null,
+      render: (_, row) => {
+        if (row.status === 'PENDING') return (
+          <Popconfirm
+            title="Hủy lịch này?"
+            okText="Hủy lịch"
+            cancelText="Không"
+            onConfirm={() => cancelSchedule(row.id)}
+          >
+            <Button danger size="small">Hủy</Button>
+          </Popconfirm>
+        );
+        if (row.status === 'RUNNING') return (
+          <Popconfirm
+            title="Dừng tưới ruộng này?"
+            okText="Dừng"
+            cancelText="Không"
+            onConfirm={() => stopSchedule(row.id)}
+          >
+            <Button danger size="small">Dừng</Button>
+          </Popconfirm>
+        );
+        return null;
+      },
     },
   ];
 

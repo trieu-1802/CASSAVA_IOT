@@ -54,9 +54,13 @@ static const int RELAYS_LEN = sizeof(RELAYS) / sizeof(RELAYS[0]);
 
 /* ============================ END CONFIG ============================ */
 
+#define MAX_VALVE_ID 16
+
 static MQTTClient            g_mqtt;
 static volatile sig_atomic_t g_run = 1;
 static pthread_mutex_t       g_pub_mutex = PTHREAD_MUTEX_INITIALIZER;
+/* Cờ abort theo valve_id: lệnh CLOSE bật cờ để worker đang tưới thoát sớm. */
+static volatile sig_atomic_t g_abort[MAX_VALVE_ID + 1];
 
 static void on_signal(int s) { (void)s; g_run = 0; }
 
@@ -147,10 +151,37 @@ static void send_ack(const char *cmd_topic, const char *schedule_id, int ok, con
     fflush(stdout);
 }
 
+/* Ack sớm "RUNNING": báo BE đã bắt đầu tưới ngay khi nhận lệnh, trước khi chờ hết
+ * duration. BE chuyển SENT -> RUNNING nên lịch không bị NO_ACK với lần tưới dài. */
+static void send_running_ack(const char *cmd_topic, const char *schedule_id) {
+    char ack_topic[256];
+    char payload[256];
+    if (build_ack_topic(cmd_topic, ack_topic, sizeof(ack_topic)) != 0) {
+        fprintf(stderr, "[pump] cannot build ack topic from %s\n", cmd_topic);
+        return;
+    }
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "scheduleId", schedule_id ? schedule_id : "");
+    cJSON_AddStringToObject(root, "ack",        "RUNNING");
+    cJSON_AddNumberToObject(root, "ackAt",      (double)now_ms());
+    cJSON_AddNullToObject(root, "errorMessage");
+    char *s = cJSON_PrintUnformatted(root);
+    if (s && strlen(s) + 1 <= sizeof(payload)) {
+        strcpy(payload, s);
+        publish_str(ack_topic, payload);
+        fprintf(stdout, "[pump] ACK_RUNNING schedule=%s -> %s\n",
+                schedule_id ? schedule_id : "?", ack_topic);
+        fflush(stdout);
+    }
+    if (s) cJSON_free(s);
+    cJSON_Delete(root);
+}
+
 typedef struct {
     char cmd_topic[256];
     char schedule_id[64];
     char relay_topic[32];
+    int  valve_id;
     int  duration;
 } PumpJob;
 
@@ -161,9 +192,27 @@ static void *pump_worker(void *arg) {
             job->schedule_id, job->relay_topic, job->duration);
     fflush(stdout);
 
+    if (job->valve_id >= 0 && job->valve_id <= MAX_VALVE_ID) g_abort[job->valve_id] = 0;
+
     publish_str(job->relay_topic, "1");
-    sleep(job->duration);
+    send_running_ack(job->cmd_topic, job->schedule_id);  // báo BE: đang tưới (thoát NO_ACK)
+
+    /* Ngủ theo từng giây để có thể ngắt sớm khi nhận lệnh CLOSE (g_abort). */
+    int stopped = 0;
+    for (int i = 0; i < job->duration && g_run; i++) {
+        if (job->valve_id >= 0 && job->valve_id <= MAX_VALVE_ID && g_abort[job->valve_id]) {
+            stopped = 1;
+            break;
+        }
+        sleep(1);
+    }
+
     publish_str(job->relay_topic, "0");
+    if (job->valve_id >= 0 && job->valve_id <= MAX_VALVE_ID) g_abort[job->valve_id] = 0;
+
+    fprintf(stdout, "[pump] %s schedule=%s relay=%s\n",
+            stopped ? "STOPPED" : "DONE", job->schedule_id, job->relay_topic);
+    fflush(stdout);
 
     send_ack(job->cmd_topic, job->schedule_id, 1, NULL);
 
@@ -202,6 +251,28 @@ static int on_message(void *ctx, char *topic, int topic_len, MQTTClient_message 
         send_ack(topic, sched, 0, "missing scheduleId or action");
         goto cleanup;
     }
+
+    int valve_id = parse_valve_id(topic);
+    const char *relay = (valve_id > 0) ? lookup_relay(valve_id) : NULL;
+    if (!relay) {
+        send_ack(topic, sched, 0, "unknown valveId");
+        goto cleanup;
+    }
+
+    /* CLOSE: dừng tưới đang chạy — tắt relay ngay + bật cờ abort để worker (nếu còn
+     * đang đếm thời gian) thoát sớm. BE đã tính lượng nước một phần qua /stop nên ack
+     * này chỉ là xác nhận (idempotent ở BE). */
+    if (strcmp(act, "CLOSE") == 0) {
+        /* CHỈ set cờ abort — KHÔNG publish/ack trong callback. Publish ngay trong
+         * on_message sẽ kẹt thread nhận của Paho sync client (sau đó không nhận
+         * thêm cmd nào). Worker đang chạy sẽ phát hiện cờ và tự tắt relay + ack
+         * DONE trong ~1s. BE cũng đã ghi DONE khi bấm Dừng nên không cần ack ở đây. */
+        if (valve_id <= MAX_VALVE_ID) g_abort[valve_id] = 1;
+        fprintf(stdout, "[pump] CLOSE schedule=%s valve=%d (abort set)\n", sched, valve_id);
+        fflush(stdout);
+        goto cleanup;
+    }
+
     if (strcmp(act, "OPEN_TIMED") != 0) {
         send_ack(topic, sched, 0, "unsupported action");
         goto cleanup;
@@ -211,19 +282,13 @@ static int on_message(void *ctx, char *topic, int topic_len, MQTTClient_message 
         goto cleanup;
     }
 
-    int valve_id = parse_valve_id(topic);
-    const char *relay = (valve_id > 0) ? lookup_relay(valve_id) : NULL;
-    if (!relay) {
-        send_ack(topic, sched, 0, "unknown valveId");
-        goto cleanup;
-    }
-
     PumpJob *job = (PumpJob *)calloc(1, sizeof(*job));
     if (!job) { send_ack(topic, sched, 0, "oom"); goto cleanup; }
 
     strncpy(job->cmd_topic,   topic, sizeof(job->cmd_topic) - 1);
     strncpy(job->schedule_id, sched, sizeof(job->schedule_id) - 1);
     strncpy(job->relay_topic, relay, sizeof(job->relay_topic) - 1);
+    job->valve_id = valve_id;
     job->duration = duration;
 
     pthread_t tid;
@@ -278,7 +343,21 @@ int main(void) {
             MQTT_BROKER_URL, CMD_TOPIC_FILTER, MAX_DURATION_SEC);
     fflush(stdout);
 
-    while (g_run) sleep(1);
+    /* Watchdog: client đồng bộ không tự reconnect. Nếu mất kết nối (bridge/network
+     * blip), kết nối lại + subscribe lại để edge không "chết" tới lúc restart tay. */
+    while (g_run) {
+        if (!MQTTClient_isConnected(g_mqtt)) {
+            fprintf(stderr, "[pump] disconnected, reconnecting...\n");
+            if (MQTTClient_connect(g_mqtt, &opts) == MQTTCLIENT_SUCCESS
+                && MQTTClient_subscribe(g_mqtt, CMD_TOPIC_FILTER, QOS) == MQTTCLIENT_SUCCESS) {
+                fprintf(stdout, "[pump] reconnected + resubscribed %s\n", CMD_TOPIC_FILTER);
+                fflush(stdout);
+            } else {
+                sleep(5); /* backoff trước khi thử lại */
+            }
+        }
+        sleep(2);
+    }
 
     MQTTClient_disconnect(g_mqtt, 1000);
     MQTTClient_destroy(&g_mqtt);
