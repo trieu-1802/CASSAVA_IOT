@@ -24,7 +24,7 @@ public class IrrigationSchedule {
     private String fieldId;
     private Integer valveId;
     private Date scheduledTime;
-    private Integer durationSeconds;
+    private Double durationSeconds;
     private Double amount;
     private String userName;
     private Status status;
@@ -50,8 +50,8 @@ public class IrrigationSchedule {
     public Date getScheduledTime() { return scheduledTime; }
     public void setScheduledTime(Date scheduledTime) { this.scheduledTime = scheduledTime; }
 
-    public Integer getDurationSeconds() { return durationSeconds; }
-    public void setDurationSeconds(Integer durationSeconds) { this.durationSeconds = durationSeconds; }
+    public Double getDurationSeconds() { return durationSeconds; }
+    public void setDurationSeconds(Double durationSeconds) { this.durationSeconds = durationSeconds; }
 
     public Double getAmount() { return amount; }
     public void setAmount(Double amount) { this.amount = amount; }

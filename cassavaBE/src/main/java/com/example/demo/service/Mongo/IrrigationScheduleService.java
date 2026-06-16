@@ -225,9 +225,9 @@ public class IrrigationScheduleService {
 
         Field field = fieldMongoRepository.findById(s.getFieldId()).orElse(null);
         Date now = new Date();
-        long elapsedSec = s.getStartedAt() != null
-                ? Math.max(0L, (now.getTime() - s.getStartedAt().getTime()) / 1000L) : 0L;
-        Double amountMm = computeAmountMm(field, (int) elapsedSec);
+        double elapsedSec = s.getStartedAt() != null
+                ? Math.max(0.0, (now.getTime() - s.getStartedAt().getTime()) / 1000.0) : 0.0;
+        Double amountMm = computeAmountMm(field, elapsedSec);
 
         s.setStatus(Status.DONE);
         s.setFinishedAt(now);
@@ -257,7 +257,7 @@ public class IrrigationScheduleService {
      *      (3600 × distanceBetweenHole_m × distanceBetweenRow_m)
      * Returns null if any required parameter is missing or non-positive.
      */
-    private Double computeAmountMm(Field field, Integer durationSeconds) {
+    private Double computeAmountMm(Field field, Double durationSeconds) {
         if (field == null || durationSeconds == null || durationSeconds <= 0) return null;
         double dripRate = field.getDripRate();
         double dHole = field.getDistanceBetweenHole();

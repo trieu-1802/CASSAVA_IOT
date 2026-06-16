@@ -47,7 +47,8 @@ public class IrrigationScheduleScheduler {
             }
 
             try {
-                publisher.publishOpenTimed(s.getFieldId(), s.getValveId(), s.getId(), s.getDurationSeconds());
+                publisher.publishOpenTimed(s.getFieldId(), s.getValveId(), s.getId(),
+                        (int) Math.round(s.getDurationSeconds()));
                 scheduleService.markSent(s.getId());
             } catch (Exception e) {
                 log.warn("Publish schedule {} failed: {}", s.getId(), e.getMessage());
@@ -61,7 +62,7 @@ public class IrrigationScheduleScheduler {
         List<IrrigationSchedule> running = scheduleService.getRunning();
         for (IrrigationSchedule s : running) {
             if (s.getStartedAt() == null || s.getDurationSeconds() == null) continue;
-            long finishMs = s.getStartedAt().getTime() + s.getDurationSeconds() * 1000L;
+            long finishMs = s.getStartedAt().getTime() + (long) (s.getDurationSeconds() * 1000);
             if (nowMs < finishMs) continue;
 
             scheduleService.markDoneAndRecord(s.getId());

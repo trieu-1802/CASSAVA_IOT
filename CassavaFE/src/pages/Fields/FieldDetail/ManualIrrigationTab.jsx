@@ -146,12 +146,12 @@ const ManualIrrigationTab = ({ fieldId, fieldName, fieldMode = 'OPERATION' }) =>
       dataIndex: 'scheduledTime',
       render: (v) => v ? dayjs(v).format('DD/MM/YYYY HH:mm') : '—',
       sorter: (a, b) => new Date(a.scheduledTime) - new Date(b.scheduledTime),
-      defaultSortOrder: 'ascend',
+      defaultSortOrder: 'descend',
     },
     {
       title: 'Thời lượng',
       dataIndex: 'durationSeconds',
-      render: (v) => v ? `${Math.round(v / 60)} phút` : '—',
+      render: (v) => v ? `${(v / 60).toFixed(1)} phút` : '—',
       width: 110,
     },
     {
@@ -237,7 +237,8 @@ const ManualIrrigationTab = ({ fieldId, fieldName, fieldMode = 'OPERATION' }) =>
               </Form.Item>
               <Form.Item label="Thời gian tưới (phút)">
                 <InputNumber
-                  min={1}
+                  min={0.1}
+                  step={0.5}
                   value={durationMinutes}
                   onChange={setDurationMinutes}
                   style={{ width: '100%' }}
