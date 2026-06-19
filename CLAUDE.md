@@ -26,6 +26,7 @@ mvn spring-boot:run   # run at http://localhost:8081
 mvn test              # run all tests
 mvn test -Dtest=ClassName#methodName   # run a single test
 ```
+> Note: the BE has **no real test suite yet** — `src/test` contains only `Demo1ApplicationTests` (a Spring context-load smoke test). Don't rely on `mvn test` to validate behavior changes; verify manually or add tests.
 
 ### ML service (`ml-service/`) — optional, anomaly detection + forecasting
 ```bash
@@ -96,7 +97,7 @@ Two MQTT subsystems share a **two-broker topology** linked by a mosquitto bridge
 
 Subsystems:
 - **operation** — BE ↔ edge for irrigation commands/acks (`cassava/field/+/valve/+/{cmd,ack}`).
-- **sensor** — edge publishes weather + soil readings on `/sensor/weatherStation2` and `field1..field4`. Raw persistence is owned by the **edge C binaries** (single-file `edge/edge_to_mongo_weather.c`, `edge/edge_to_mongo_soil.c`, compiled directly with `cc` on pi3) which insert into MongoDB `sensor_value`. The BE listens to the same topics for **anomaly detection**: `MqttSensorListener` forwards each weather reading to ml-service `POST /detect` via `MlDetectClient`, then `PreferredDetectionMethods` picks one method's verdict per sensor; if that verdict is anomalous the BE writes a `SensorCorrection` row (raw value still owned by the edge). Soil readings are log-only (no detectors fit for soil yet).
+- **sensor** — edge publishes weather + soil readings on `/sensor/weatherStation2` and `field1..field4`. Raw persistence is owned by the **edge C binaries** (single-file `edge/edge_to_mongo_weather.c`, `edge/edge_to_mongo_soil.c`, compiled directly with `cc` on pi3) which insert into MongoDB `sensor_value`. The BE listens to these topics for **anomaly detection** (note: `mqtt.sensor.soil-topics` is configured with **six** entries — `field1..field4` plus `field2.1`/`field4.1` — a superset of the four the edge `SOIL_FIELDS` table currently feeds, so the two extras receive no traffic today): `MqttSensorListener` forwards each weather reading to ml-service `POST /detect` via `MlDetectClient`, then `PreferredDetectionMethods` picks one method's verdict per sensor; if that verdict is anomalous the BE writes a `SensorCorrection` row (raw value still owned by the edge). Soil readings are log-only (no detectors fit for soil yet).
 
 See `deploy/MQTT.md` for runbook details (including the bridge-vs-direct rationale).
 
