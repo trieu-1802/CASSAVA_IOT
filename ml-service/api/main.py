@@ -103,6 +103,15 @@ def _register_sensor(sensor_id: str, nasa_df: pd.DataFrame | None) -> None:
         path = ARTIFACTS_DIR / f"{fc_name}_{sensor_id}.pkl"
         fc = _load_forecaster(f"{fc_name}/{sensor_id}", fc_cls, path)
         if fc is not None:
+            # Feed serving context so predict() works without a live update() feed
+            # (saved artifacts may carry no rolling `_history`). NASA is the same
+            # series the model was fit on; predict(time) forecasts from the window
+            # ending just before `time`.
+            if nasa_df is not None and sensor_id in nasa_df.columns:
+                try:
+                    fc.set_offline_context(nasa_df[sensor_id])
+                except Exception:
+                    logger.exception("set_offline_context failed for %s/%s", fc_name, sensor_id)
             forecasters[fc_name] = fc
             detectors[f"{fc_name}_residual"] = ResidualDetector(fc, name=f"{fc_name}_residual")
 
@@ -112,11 +121,15 @@ def _register_sensor(sensor_id: str, nasa_df: pd.DataFrame | None) -> None:
         FORECASTERS[sensor_id] = forecasters
 
 
-def _register_lstm_views() -> None:
+def _register_lstm_views(nasa_df: pd.DataFrame | None = None) -> None:
     """Load the single multi-target LSTM artifact and create one view per
     sensor sharing the same underlying Keras model + scaler. Each view
     exposes the right `residual_std` for its target so ResidualDetector
     wrappers threshold correctly.
+
+    `nasa_df` (if given) is set as each view's offline context so predict()
+    pulls its 48h window from it instead of querying Mongo — required for the
+    residual detector to produce a prediction at serving time.
     """
     if not LSTM_PATH.exists():
         logger.warning("LSTM artifact missing at %s -- LSTM detector/forecaster skipped", LSTM_PATH)
@@ -151,6 +164,8 @@ def _register_lstm_views() -> None:
         view._residual_std_by_target = master._residual_std_by_target
         view.residual_std = master._residual_std_by_target[sensor_id]
         view.fitted = True
+        if nasa_df is not None:
+            view.set_offline_context(nasa_df)
 
         FORECASTERS.setdefault(sensor_id, {})["lstm"] = view
         DETECTORS.setdefault(sensor_id, {})["lstm_residual"] = ResidualDetector(
@@ -178,7 +193,7 @@ async def lifespan(app: FastAPI):
         _register_sensor(sensor_id, nasa_df)
 
     # LSTM is multi-target — one artifact serves every sensor view.
-    _register_lstm_views()
+    _register_lstm_views(nasa_df)
 
     logger.info(
         "ml-service starting; detectors=%s, forecasters=%s",

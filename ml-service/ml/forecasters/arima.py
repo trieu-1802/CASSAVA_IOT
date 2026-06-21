@@ -44,6 +44,7 @@ class ArimaForecaster(Forecaster):
         self.interpolate_limit = interpolate_limit
         self._results = None  # statsmodels ARIMAResults (holds fitted params)
         self._history = None  # all observations seen so far (train + updates)
+        self._offline_context = None  # optional time-indexed series for serving
 
     def fit(self, series: pd.Series) -> None:
         clean = series.interpolate(
@@ -57,11 +58,30 @@ class ArimaForecaster(Forecaster):
         residuals = clean - self._results.fittedvalues
         self._calibrate_residual_std(residuals)
 
+    def set_offline_context(self, series: pd.Series) -> None:
+        """Feed a time-indexed series as forecast context (e.g. the NASA training
+        data at serving startup). `predict(time)` then forecasts the step AT `time`
+        from the window ending just before it — making the forecast time-aware
+        without a live Mongo/update() feed. Falls back to `_history` if unset."""
+        self._offline_context = series.interpolate(
+            method=self.interpolate_method, limit=self.interpolate_limit
+        ).dropna()
+
+    def _context_for(self, time: pd.Timestamp) -> np.ndarray:
+        if self._offline_context is not None:
+            s = self._offline_context.loc[: pd.Timestamp(time)]
+            if len(s) and s.index[-1] == pd.Timestamp(time):
+                s = s.iloc[:-1]  # forecast `time` itself; don't peek at it
+            return np.asarray(s.values, dtype=float)
+        if self._history is not None:
+            return np.asarray(self._history, dtype=float)
+        raise RuntimeError("ArimaForecaster: no context (history/offline) to predict from")
+
     def predict(self, time: pd.Timestamp, horizon: int = 1) -> ForecastResult:
-        if self._results is None or self._history is None:
+        if self._results is None:
             raise RuntimeError("ArimaForecaster not fitted")
         # Re-apply fitted params to the recent context (no re-MLE) and forecast.
-        res = self._results.apply(self._history[-_APPLY_CONTEXT:], refit=False)
+        res = self._results.apply(self._context_for(time)[-_APPLY_CONTEXT:], refit=False)
         fc = np.asarray(res.forecast(steps=horizon), dtype=float)
         ts = pd.date_range(pd.Timestamp(time), periods=horizon, freq="h")
         return ForecastResult(

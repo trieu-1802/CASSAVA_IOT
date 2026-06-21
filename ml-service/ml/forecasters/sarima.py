@@ -56,6 +56,7 @@ class SarimaForecaster(Forecaster):
         self.interpolate_limit = interpolate_limit
         self._model = None  # statsforecast ARIMA or AutoARIMA after fit
         self._history = None  # all observations seen so far (train + updates)
+        self._offline_context = None  # optional time-indexed series for serving
 
     def fit(self, series: pd.Series) -> None:
         from statsforecast.models import ARIMA, AutoARIMA  # noqa: PLC0415
@@ -103,14 +104,32 @@ class SarimaForecaster(Forecaster):
         residuals = residuals[~np.isnan(residuals)]
         self._calibrate_residual_std(pd.Series(residuals))
 
+    def set_offline_context(self, series: pd.Series) -> None:
+        """Feed a time-indexed series as forecast context (e.g. the NASA training
+        data at serving startup). `predict(time)` then forecasts the step AT `time`
+        from the window ending just before it — time-aware without a live update()
+        feed. Falls back to `_history` if unset."""
+        self._offline_context = series.interpolate(
+            method=self.interpolate_method, limit=self.interpolate_limit
+        ).dropna()
+
+    def _context_for(self, time: pd.Timestamp) -> np.ndarray:
+        if self._offline_context is not None:
+            s = self._offline_context.loc[: pd.Timestamp(time)]
+            if len(s) and s.index[-1] == pd.Timestamp(time):
+                s = s.iloc[:-1]  # forecast `time` itself; don't peek at it
+            return np.asarray(s.values, dtype=np.float64)
+        if self._history is not None:
+            return np.asarray(self._history, dtype=np.float64)
+        raise RuntimeError("SarimaForecaster: no context (history/offline) to predict from")
+
     def predict(self, time: pd.Timestamp, horizon: int = 1) -> ForecastResult:
         if self._model is None:
             raise RuntimeError("SarimaForecaster not fitted")
-        # forward() applies the fitted parameters to the accumulated history and
-        # forecasts `horizon` steps from its end — so successive predict()/update()
-        # calls give a true one-step-ahead walk. (Plain predict() always forecasts
-        # from the training end, ignoring updates → a flat forecast.)
-        ctx = self._history[-_FORWARD_CONTEXT:]
+        # forward() applies the fitted parameters to the supplied context and
+        # forecasts `horizon` steps from its end. Context = the window ending just
+        # before `time` (offline context if set, else the rolling `_history`).
+        ctx = self._context_for(time)[-_FORWARD_CONTEXT:]
         out = self._model.forward(y=ctx, h=horizon)
         values = [float(v) for v in out["mean"]]
         ts = pd.date_range(pd.Timestamp(time), periods=horizon, freq="h")
