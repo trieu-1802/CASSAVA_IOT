@@ -11,7 +11,7 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
-  AreaChart,
+  ComposedChart,
   Area,
   Brush,
 } from 'recharts';
@@ -66,6 +66,34 @@ const formatTime = (iso) => {
 const formatFullTime = (iso) => new Date(iso).toLocaleString('vi-VN', {
   timeZone: 'Asia/Ho_Chi_Minh',
 });
+
+const fmtNum = (v) =>
+  v === null || v === undefined ? '–' : typeof v === 'number' ? Number(v.toFixed(2)) : v;
+
+// Custom tooltip: shows the real value always; at an anomalous point it also
+// surfaces the forecaster's predicted value + which methods detected/predicted.
+const ChartTooltip = ({ active, payload }) => {
+  if (!active || !payload || !payload.length) return null;
+  const p = payload[0]?.payload || {};
+  const isAnomaly = p.anomalyValue !== null && p.anomalyValue !== undefined;
+  return (
+    <div style={{ background: '#fff', border: '1px solid #d9d9d9', borderRadius: 6, padding: '8px 12px', fontSize: 13, boxShadow: '0 2px 8px rgba(0,0,0,0.12)' }}>
+      <div style={{ fontWeight: 'bold', marginBottom: 4 }}>{p.fullTime}</div>
+      <div>Giá trị thực: <b>{fmtNum(p.value)}</b></div>
+      {isAnomaly && (
+        <div style={{ marginTop: 4, borderTop: '1px dashed #eee', paddingTop: 4 }}>
+          <div style={{ color: '#cf1322' }}>⚠ Điểm bất thường</div>
+          <div style={{ color: '#d46b08' }}>Giá trị dự báo: <b>{fmtNum(p.predictedValue)}</b></div>
+          <div style={{ color: '#8c8c8c', fontSize: 12, marginTop: 2 }}>
+            Phát hiện: {p.anomalyMethod || '?'}
+            {p.predictedMethod ? ` · Dự báo: ${p.predictedMethod}` : ''}
+            {p.anomalyScore != null ? ` · score ${Number(p.anomalyScore).toFixed(2)}` : ''}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 const WeatherDetail = () => {
   const { sensorId } = useParams();
@@ -145,17 +173,57 @@ const WeatherDetail = () => {
       const latest = new Date(response.data[0].time).getTime();
       const { startCutoff, endCutoff } = resolveRange(latest);
 
-      return response.data
+      const rows = response.data
         .filter((item) => {
           const t = new Date(item.time).getTime();
           return t >= startCutoff && t <= endCutoff;
         })
         .reverse()
         .map((item) => ({
+          t: new Date(item.time).getTime(),
           time: formatTime(item.time),
           value: item.value,
           fullTime: formatFullTime(item.time),
         }));
+
+      // Overlay anomaly corrections written by the BE (ml-service detection) —
+      // group-scoped weather sensors only. Mark the anomalous reading and attach
+      // the forecaster's predicted value at that time, matched to the nearest reading.
+      if (isGroupScope && rows.length > 0) {
+        try {
+          const corrRes = await api.get('/sensor-values/corrections', {
+            params: { groupId, sensorId },
+          });
+          const corrections = (corrRes.data || []).filter((c) => {
+            const t = new Date(c.time).getTime();
+            return t >= startCutoff && t <= endCutoff;
+          });
+          const TOLERANCE_MS = 2 * 60 * 60 * 1000; // nearest reading within 2h
+          corrections.forEach((c) => {
+            const tc = new Date(c.time).getTime();
+            let best = null;
+            let bestDiff = Infinity;
+            for (const row of rows) {
+              const d = Math.abs(row.t - tc);
+              if (d < bestDiff) {
+                bestDiff = d;
+                best = row;
+              }
+            }
+            if (best && bestDiff <= TOLERANCE_MS) {
+              best.anomalyValue = c.actual != null ? c.actual : best.value;
+              best.predictedValue = c.predicted;
+              best.anomalyMethod = c.method;
+              best.predictedMethod = c.predictedMethod;
+              best.anomalyScore = c.score;
+            }
+          });
+        } catch (err) {
+          console.warn('Không tải được dữ liệu bất thường:', err?.message);
+        }
+      }
+
+      return rows;
     };
 
     const run = async () => {
@@ -229,7 +297,7 @@ const WeatherDetail = () => {
         ) : data.length > 0 ? (
           <div style={{ width: '100%', height: 450 }}>
             <ResponsiveContainer>
-              <AreaChart data={data} margin={{ top: 10, right: 30, left: 0, bottom: 20 }}>
+              <ComposedChart data={data} margin={{ top: 10, right: 30, left: 0, bottom: 20 }}>
                 <defs>
                   <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor={getChartColor(sensorId)} stopOpacity={0.8} />
@@ -239,21 +307,42 @@ const WeatherDetail = () => {
                 <CartesianGrid strokeDasharray="3 3" vertical={false} />
                 <XAxis dataKey="time" interval="preserveStartEnd" minTickGap={40} />
                 <YAxis />
-                <Tooltip
-                  labelStyle={{ fontWeight: 'bold' }}
-                  formatter={(value) => [`${value}`, 'Giá trị']}
-                  labelFormatter={(_, payload) => payload[0]?.payload?.fullTime}
-                />
-                <Brush dataKey="time" height={30} stroke={getChartColor(sensorId)} />
+                <Tooltip content={<ChartTooltip />} />
+                <Legend verticalAlign="top" wrapperStyle={{ paddingBottom: 15 }} />
                 <Area
                   type="monotone"
                   dataKey="value"
+                  name="Giá trị thực"
                   stroke={getChartColor(sensorId)}
                   fillOpacity={1}
                   fill="url(#colorValue)"
-                  animationDuration={1500}
+                  dot={false}
+                  isAnimationActive={false}
                 />
-              </AreaChart>
+                <Line
+                  type="monotone"
+                  dataKey="predictedValue"
+                  name="Giá trị dự báo (SARIMA)"
+                  stroke="transparent"
+                  legendType="circle"
+                  connectNulls={false}
+                  isAnimationActive={false}
+                  dot={{ r: 5, fill: '#faad14', stroke: '#ad6800', strokeWidth: 1 }}
+                  activeDot={{ r: 6 }}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="anomalyValue"
+                  name="Điểm bất thường"
+                  stroke="transparent"
+                  legendType="circle"
+                  connectNulls={false}
+                  isAnimationActive={false}
+                  dot={{ r: 5, fill: '#ff4d4f', stroke: '#a8071a', strokeWidth: 1 }}
+                  activeDot={{ r: 7 }}
+                />
+                <Brush dataKey="time" height={30} stroke={getChartColor(sensorId)} />
+              </ComposedChart>
             </ResponsiveContainer>
           </div>
         ) : (

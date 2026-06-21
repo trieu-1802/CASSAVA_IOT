@@ -23,9 +23,10 @@ public class SensorCorrection {
     private String sensorId;
 
     private Double actual;      // raw value received over MQTT
-    private Double predicted;   // imputation suggested by the preferred detector
-    private String method;      // detector name (e.g. seasonal_zscore, sarima_residual)
-    private Double score;       // |z|-like score from that detector
+    private Double predicted;   // imputation value, from the preferred FORECASTER (default SARIMA)
+    private String method;      // DETECTION method that flagged the anomaly (e.g. lstm_residual)
+    private String predictedMethod; // FORECASTER that produced `predicted` (e.g. sarima_residual); null for range_check
+    private Double score;       // detection score (|z|-like) from `method`
 
     public SensorCorrection() {}
 
@@ -51,6 +52,9 @@ public class SensorCorrection {
 
     public String getMethod() { return method; }
     public void setMethod(String method) { this.method = method; }
+
+    public String getPredictedMethod() { return predictedMethod; }
+    public void setPredictedMethod(String predictedMethod) { this.predictedMethod = predictedMethod; }
 
     public Double getScore() { return score; }
     public void setScore(Double score) { this.score = score; }

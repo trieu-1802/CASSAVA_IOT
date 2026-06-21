@@ -1,6 +1,8 @@
 package com.example.demo.controller.mongo;
 
 import com.example.demo.entity.MongoEntity.SensorValue;
+import com.example.demo.entity.MongoEntity.SensorCorrection;
+import com.example.demo.repositories.mongo.SensorCorrectionRepository;
 import com.example.demo.service.Mongo.SensorValueService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
@@ -17,6 +19,9 @@ import java.util.Map;
 public class SensorValueController {
     @Autowired
     private SensorValueService sensorValueService;
+
+    @Autowired
+    private SensorCorrectionRepository correctionRepo;
 
     // API: GET http://localhost:8081/api/sensor-values/history?fieldId=fieldTest&sensorId=temperature
     @GetMapping("/history")
@@ -39,6 +44,16 @@ public class SensorValueController {
             @RequestParam String groupId,
             @RequestParam String sensorId) {
         return sensorValueService.getGroupHistory(groupId, sensorId);
+    }
+
+    // Anomaly corrections for a group's weather sensor (chart overlay):
+    // anomalous points + the forecaster's predicted value at that time.
+    // Ex: GET /sensor-values/corrections?groupId=...&sensorId=temperature
+    @GetMapping("/corrections")
+    public List<SensorCorrection> getCorrections(
+            @RequestParam String groupId,
+            @RequestParam String sensorId) {
+        return correctionRepo.findByGroupIdAndSensorIdOrderByTimeDesc(groupId, sensorId);
     }
 
     /**
