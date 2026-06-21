@@ -4,6 +4,7 @@ import com.example.demo.entity.MongoEntity.SensorCorrection;
 import com.example.demo.repositories.mongo.SensorCorrectionRepository;
 import com.example.demo.service.anomaly.MlDetectClient;
 import com.example.demo.service.anomaly.PreferredDetectionMethods;
+import com.example.demo.service.anomaly.PreferredForecastMethods;
 import com.example.demo.service.anomaly.RangeCheckResult;
 import com.example.demo.service.anomaly.RangeCheckService;
 import jakarta.annotation.PostConstruct;
@@ -23,7 +24,8 @@ import java.util.List;
  *
  * Weather flow (hourly per the weather station's publish cadence), two-tier:
  *   Tier 1 — RangeCheckService physical-bounds gate. Out-of-range → flag as a
- *            `range_check` SensorCorrection and STOP (no ml-service round-trip).
+ *            `range_check` SensorCorrection (skips the Tier-2 detector verdict but
+ *            still asks ml-service for the forecaster's recovery value) and STOP.
  *   Tier 2 — in-range → POST /detect (ml-service) → pick the preferred detector's
  *            verdict → if is_anomaly, write a SensorCorrection row.
  *   The raw value stays in sensor_value (owned by the edge C binaries); this
@@ -47,6 +49,9 @@ public class MqttSensorListener {
 
     @Autowired
     private PreferredDetectionMethods preferredMethods;
+
+    @Autowired
+    private PreferredForecastMethods forecastMethods;
 
     @Autowired
     private SensorCorrectionRepository correctionRepo;
@@ -112,9 +117,23 @@ public class MqttSensorListener {
         // bounds is obviously bad; flag it and skip the ml-service round-trip.
         RangeCheckResult rc = rangeCheck.check(sensorId, value);
         if (!rc.isValid()) {
-            log.warn("[sensor] RANGE_FAIL topic={} sensorId={} value={} min={} max={} (skipping ml-service)",
-                    topic, sensorId, value, rc.getMin(), rc.getMax());
-            persistRangeCorrection(sensorId, time, value);
+            // Out-of-range → flagged by Tier-1 (no Tier-2 detector verdict). We still
+            // ask ml-service for the preferred forecaster's value so the reading gets a
+            // recovery/imputed `predicted` (was null before). Fail-soft: if ml-service is
+            // down, predicted stays null and we just record the range_check flag.
+            Double predicted = null;
+            String predictedMethod = null;
+            MlDetectClient.DetectResponse r = mlDetect.detect(weatherGroupId, sensorId, time, value);
+            if (r != null) {
+                MlDetectClient.MethodVerdict fc = findMethod(r.methods, forecastMethods.forSensor(sensorId));
+                if (fc != null && fc.predicted != null) {
+                    predicted = fc.predicted;
+                    predictedMethod = fc.name;
+                }
+            }
+            log.warn("[sensor] RANGE_FAIL topic={} sensorId={} value={} min={} max={} predicted={} (by {})",
+                    topic, sensorId, value, rc.getMin(), rc.getMax(), predicted, predictedMethod);
+            persistRangeCorrection(sensorId, time, value, predicted, predictedMethod);
             return;
         }
 
@@ -141,10 +160,18 @@ public class MqttSensorListener {
         }
 
         if (chosen.isAnomaly) {
-            log.warn("[sensor] ANOMALY topic={} sensorId={} value={} predicted={} method={} score={}",
-                    topic, sensorId, value, chosen.predicted, chosen.name,
+            // The anomaly decision is the preferred detector's above; the recovery
+            // value (`predicted`) comes from the preferred FORECASTER (default SARIMA),
+            // read from its residual-detector entry in the SAME /detect response.
+            // Falls back to the detector's own predicted if that method is absent.
+            String fcMethod = forecastMethods.forSensor(sensorId);
+            MlDetectClient.MethodVerdict fc = findMethod(r.methods, fcMethod);
+            Double predicted = (fc != null && fc.predicted != null) ? fc.predicted : chosen.predicted;
+            String predictedMethod = (fc != null && fc.predicted != null) ? fc.name : chosen.name;
+            log.warn("[sensor] ANOMALY topic={} sensorId={} value={} predicted={} (by {}) detect={} score={}",
+                    topic, sensorId, value, predicted, predictedMethod, chosen.name,
                     chosen.score == null ? "?" : String.format("%.2f", chosen.score));
-            persistCorrection(sensorId, time, value, chosen);
+            persistCorrection(sensorId, time, value, chosen, predicted, predictedMethod);
         } else {
             log.info("[sensor] OK topic={} sensorId={} value={} method={} score={}",
                     topic, sensorId, value, chosen.name,
@@ -152,15 +179,18 @@ public class MqttSensorListener {
         }
     }
 
-    private void persistCorrection(String sensorId, Instant time, double actual, MlDetectClient.MethodVerdict chosen) {
+    private void persistCorrection(String sensorId, Instant time, double actual,
+                                   MlDetectClient.MethodVerdict chosen,
+                                   Double predicted, String predictedMethod) {
         try {
             SensorCorrection c = new SensorCorrection();
             c.setTime(Date.from(time));
             c.setGroupId(weatherGroupId);
             c.setSensorId(sensorId);
             c.setActual(actual);
-            c.setPredicted(chosen.predicted);
+            c.setPredicted(predicted);
             c.setMethod(chosen.name);
+            c.setPredictedMethod(predictedMethod);
             c.setScore(chosen.score);
             correctionRepo.save(c);
         } catch (Exception e) {
@@ -169,19 +199,22 @@ public class MqttSensorListener {
     }
 
     /**
-     * Records a Tier-1 range-gate rejection. There is no imputation to offer
-     * (the ml-service call was skipped), so `predicted`/`score` stay null —
-     * the row only marks the reading as out-of-range for downstream consumers.
+     * Records a Tier-1 range-gate rejection. `method` is `range_check` (the
+     * detection reason); `predicted` carries the preferred forecaster's recovery
+     * value (null if ml-service was unreachable); `score` stays null (a physical-
+     * bounds reject has no detector score).
      */
-    private void persistRangeCorrection(String sensorId, Instant time, double actual) {
+    private void persistRangeCorrection(String sensorId, Instant time, double actual,
+                                        Double predicted, String predictedMethod) {
         try {
             SensorCorrection c = new SensorCorrection();
             c.setTime(Date.from(time));
             c.setGroupId(weatherGroupId);
             c.setSensorId(sensorId);
             c.setActual(actual);
-            c.setPredicted(null);
+            c.setPredicted(predicted);
             c.setMethod(RANGE_METHOD);
+            c.setPredictedMethod(predictedMethod);
             c.setScore(null);
             correctionRepo.save(c);
         } catch (Exception e) {

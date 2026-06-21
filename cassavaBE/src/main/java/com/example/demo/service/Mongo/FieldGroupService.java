@@ -6,6 +6,7 @@ import com.example.demo.repositories.UserRepository;
 import com.example.demo.repositories.mongo.FieldGroupRepository;
 import com.example.demo.repositories.mongo.FieldGroupSensorRepository;
 import com.example.demo.repositories.mongo.FieldMongoRepository;
+import com.example.demo.repositories.mongo.SensorCorrectionRepository;
 import com.example.demo.repositories.mongo.SensorValueRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -35,6 +36,9 @@ public class FieldGroupService {
 
     @Autowired
     private SensorValueRepository sensorValueRepository;
+
+    @Autowired
+    private SensorCorrectionRepository correctionRepository;
 
     @Autowired
     private UserRepository userRepository;
@@ -100,6 +104,7 @@ public class FieldGroupService {
 
         groupSensorRepository.deleteByGroupId(id);
         sensorValueRepository.deleteByGroupId(id);
+        correctionRepository.deleteByGroupId(id);
         groupRepository.deleteById(id);
     }
 

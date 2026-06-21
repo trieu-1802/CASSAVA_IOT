@@ -12,9 +12,11 @@ import java.util.Map;
 /**
  * Picks which /detect method's verdict to act on, per sensor.
  *
- * Defaults are the per-sensor winners from the ml-service detector benchmark:
- *   - temperature, relativeHumidity, radiation, wind → seasonal_zscore
- *   - rain → sarima_residual (z-score thuần can't catch zero-inflated rain spikes)
+ * Defaults are the per-sensor winners from the 4-season rolling-origin
+ * detection backtest (cross-season mean F1):
+ *   - temperature, relativeHumidity, radiation → lstm_residual (best F1, ~0.66-0.68)
+ *   - wind → seasonal_zscore
+ *   - rain → zscore (rain is the weak spot; every detector scores low ~0.3-0.4)
  *
  * Overrides come from `ml.detection.preferred-method.<sensorId>` properties.
  */
@@ -24,10 +26,10 @@ public class PreferredDetectionMethods {
     private static final Logger log = LoggerFactory.getLogger(PreferredDetectionMethods.class);
 
     private static final Map<String, String> DEFAULTS = Map.of(
-            "temperature",      "seasonal_zscore",
-            "relativeHumidity", "seasonal_zscore",
-            "rain",             "sarima_residual",
-            "radiation",        "seasonal_zscore",
+            "temperature",      "lstm_residual",
+            "relativeHumidity", "lstm_residual",
+            "rain",             "zscore",
+            "radiation",        "lstm_residual",
             "wind",             "seasonal_zscore"
     );
 
