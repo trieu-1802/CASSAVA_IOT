@@ -4,6 +4,10 @@ resultWeatherThaiLan.csv
 thEquiv_tracking.csv
 paho*/
 
+# Stray data/binaries in the Java source tree (experiment CSVs, zips — not source)
+cassavaBE/src/main/java/**/*.csv
+cassavaBE/src/main/java/**/*.zip
+
 # Build output
 CassavaFE/dist/
 CassavaFE/node_modules/
